@@ -245,7 +245,7 @@
       <b style="font-size:13px">🌟 真雲端（Supabase）— 換電腦自動同步（推薦）</b>
       <p class="small">照下方 3 步驟建立免費雲端，完成後兩台電腦打開同網址就會自動同步，不用再手動匯入。</p>
       <div style="font-size:11px;background:#fff;border:1px dashed var(--border);border-radius:6px;padding:8px;margin:6px 0">
-        ① 到 <a href="https://supabase.com" target="_blank">supabase.com ↗</a> 建專案 → ② Table Editor 建表 <code>homework_data</code>（id=text, data=jsonb）→ ③ SQL Editor 貼上 RLS 設定（見下方）→ ④ Settings → API 複製 URL 與 anon key 貼到下方 → ⑤ 按「註冊」建老師帳號並登入
+        ① 到 <a href="https://sbClient.com" target="_blank">sbClient.com ↗</a> 建專案 → ② Table Editor 建表 <code>homework_data</code>（id=text, data=jsonb）→ ③ SQL Editor 貼上 RLS 設定（見下方）→ ④ Settings → API 複製 URL 與 anon key 貼到下方 → ⑤ 按「註冊」建老師帳號並登入
       </div>
       <details style="font-size:11px;margin:6px 0"><summary style="cursor:pointer;color:var(--primary)">點開看建表 SQL（通關密碼模式，只需執行一次）</summary>
         <pre style="background:#f8f9fa;padding:8px;border-radius:6px;overflow:auto;white-space:pre-wrap;font-size:10px">create table if not exists homework_data (
@@ -260,7 +260,7 @@ alter table homework_data disable row level security;
 -- alter table homework_data enable row level security;
 -- create policy "allow_authenticated" on homework_data for all using (auth.role()='authenticated') with check (auth.role()='authenticated');</pre>
       </details>
-      <label class="small">Supabase URL</label><input id="sbUrl" placeholder="https://xxx.supabase.co">
+      <label class="small">Supabase URL</label><input id="sbUrl" placeholder="https://xxx.sbClient.co">
       <label class="small">Supabase anon key</label><input id="sbKey" placeholder="eyJhbGciOi...">
       <div style="display:flex;gap:6px;margin-top:6px">
         <button class="btn small primary" onclick="saveSupabaseConfig()">💾 儲存並同步</button>
@@ -336,7 +336,7 @@ alter table homework_data disable row level security;
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@sbClient/sbClient-js@2/dist/umd/sbClient.min.js"></script>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -349,7 +349,7 @@ let activeAssignmentId = null;
 let editingAssignmentId = null;
 let currentWeekFilter = localStorage.getItem('homework_week_filter') || 'all';
 let cloudCode = localStorage.getItem('homework_cloud_code') || '';
-let supabase = null;
+let sbClient = null;
 let supabaseUrl = localStorage.getItem('supabase_url') || '';
 let supabaseKey = localStorage.getItem('supabase_key') || '';
 const CLOUD_ROW_ID = 'main'; // 固定用同一列存 24 人資料
@@ -410,7 +410,7 @@ function save(){
   if(last) last.textContent = '上次儲存：剛剛';
   if(cloudCode){ const el=document.getElementById('syncStatus'); if(el) el.textContent='已同步到同步碼：'+cloudCode+'（換電腦輸入同碼即可載入）'; }
   // 若有設定 Supabase，自動同步到雲端
-  if(supabase) saveToCloud();
+  if(sbClient) saveToCloud();
 }
 let isUnlocked=false;
 let passcodeHash=localStorage.getItem('homework_passcode_hash')||'';
@@ -423,12 +423,12 @@ function initSupabase(){
   passcodeHash = localStorage.getItem('homework_passcode_hash')||'';
   if(supabaseUrl && supabaseKey && window.supabase){
     try{
-      supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+      sbClient = window.supabase.createClient(supabaseUrl, supabaseKey);
       const urlInput=document.getElementById('sbUrl'); if(urlInput) urlInput.value=supabaseUrl;
       const keyInput=document.getElementById('sbKey'); if(keyInput) keyInput.value=supabaseKey;
       updateAuthUI();
       return true;
-    }catch(e){ console.warn('Supabase init failed', e); supabase=null; return false; }
+    }catch(e){ console.warn('Supabase init failed', e); sbClient=null; return false; }
   }
   updateAuthUI();
   return false;
@@ -473,7 +473,7 @@ function setPasscode(){
   localStorage.setItem('homework_passcode_hash', h);
   passcodeHash=h; isUnlocked=true;
   // 同步到雲端（若有 Supabase）
-  if(supabase){
+  if(sbClient){
     // 把密碼雜湊也存到雲端資料的 data 裡，方便新裝置取得
     saveToCloud();
   }
@@ -487,7 +487,7 @@ function unlockWithPasscode(){
   if(hashPasscode(input)===passcodeHash){
     isUnlocked=true; updateAuthUI(); msg.textContent='✅ 已解鎖';
     toast('已解鎖，可開始編輯'); closeAuthModal(); renderAll();
-    if(supabase) syncFromCloud();
+    if(sbClient) syncFromCloud();
   } else {
     msg.textContent='⚠️ 密碼錯誤';
   }
@@ -516,12 +516,12 @@ function requireUnlock(){
   return true;
 }
 async function saveToCloud(){
-  if(!supabase) return;
+  if(!sbClient) return;
   if(passcodeHash && !isUnlocked){ const el=document.getElementById('sbStatus'); if(el) el.textContent='⚠️ 已上鎖，請先輸入通關密碼才能同步'; return; }
   try{
     document.getElementById('sbStatus') && (document.getElementById('sbStatus').textContent='⏳ 同步到雲端中…');
     const payload={students, assignments, records, activeAssignmentId, passcodeHash, updatedAt: new Date().toISOString()};
-    const {error} = await supabase.from('homework_data').upsert({id:CLOUD_ROW_ID, data: payload, updated_at: new Date().toISOString()}, {onConflict:'id'});
+    const {error} = await sbClient.from('homework_data').upsert({id:CLOUD_ROW_ID, data: payload, updated_at: new Date().toISOString()}, {onConflict:'id'});
     if(error) throw error;
     const el=document.getElementById('sbStatus'); if(el) el.textContent='✅ 已同步到雲端（換電腦登入後自動載入） — ' + new Date().toLocaleTimeString('zh-TW');
     const pill=document.getElementById('syncPill'); if(pill){ pill.textContent='● 已同步到雲端'; pill.className='pill ok'; }
@@ -533,10 +533,10 @@ async function saveToCloud(){
   }
 }
 async function syncFromCloud(){
-  if(!supabase){ toast('請先設定 Supabase URL 與 anon key'); return; }
+  if(!sbClient){ toast('請先設定 Supabase URL 與 anon key'); return; }
   try{
     const el=document.getElementById('sbStatus'); if(el) el.textContent='⏳ 從雲端載入中…';
-    const {data, error} = await supabase.from('homework_data').select('data').eq('id', CLOUD_ROW_ID).single();
+    const {data, error} = await sbClient.from('homework_data').select('data').eq('id', CLOUD_ROW_ID).single();
     if(error) throw error;
     const d=data?.data;
     if(!d || !d.students) { if(el) el.textContent='雲端還沒有資料，先在這台按儲存會自動建立'; return; }
@@ -573,7 +573,7 @@ function saveSupabaseConfig(){
 async function testSupabase(){
   if(!initSupabase()){ toast('請先填 URL 與 key'); return; }
   try{
-    const {error} = await supabase.from('homework_data').select('id').limit(1);
+    const {error} = await sbClient.from('homework_data').select('id').limit(1);
     if(error) throw error;
     document.getElementById('sbStatus').textContent='✅ 連線成功！資料表可讀寫';
     toast('連線成功');
@@ -970,8 +970,8 @@ function openCloudModal(){
     const url=document.getElementById('sbUrl'); if(url) url.value=localStorage.getItem('supabase_url')||'';
     const key=document.getElementById('sbKey'); if(key) key.value=localStorage.getItem('supabase_key')||'';
     const sbStatus=document.getElementById('sbStatus');
-    if(supabase && sbStatus) sbStatus.textContent='✅ 已設定 Supabase，自動同步中';
-    else if(sbStatus && !supabase) sbStatus.textContent='尚未設定真雲端，完成上方 3 步驟後可自動同步';
+    if(sbClient && sbStatus) sbStatus.textContent='✅ 已設定 Supabase，自動同步中';
+    else if(sbStatus && !sbClient) sbStatus.textContent='尚未設定真雲端，完成上方 3 步驟後可自動同步';
     console.log('openCloudModal ok');
   }catch(e){
     console.error(e);
@@ -1126,7 +1126,7 @@ try{
   if(cloudCode) { const el=document.getElementById('syncStatus'); if(el) el.textContent='已同步到：'+cloudCode; }
   renderAll();
   initSupabase();
-  if(supabase){
+  if(sbClient){
     setTimeout(()=> syncFromCloud(), 800);
   }
   // 備用：確保按鈕一定能開（即使 inline onclick 被擋）
