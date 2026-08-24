@@ -115,7 +115,8 @@
   .report-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
   .report-summary div{border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center}
   body.locked .cell{pointer-events:none;opacity:.6}
-  body.locked .btn.primary{opacity:.4;pointer-events:none}
+  body.locked main .btn.primary, body.locked aside .btn.primary{opacity:.4;pointer-events:none}
+  body.locked #authModal .btn{pointer-events:auto !important; opacity:1 !important}
   body.role-assistant .admin-only{display:none !important}
   body.role-assistant .assignment-item button{display:none !important}
   body.role-assistant .assignment-item{cursor:default}
