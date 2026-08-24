@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>24位學生作業繳交管理</title>
+<style>
+  :root{--green:#e6f4ea;--green-b:#34a853;--yellow:#fef7e0;--yellow-b:#f9ab00;--red:#fce8e6;--red-b:#ea4335;--gray:#f8f9fa;--border:#dadce0;--text:#202124;--muted:#5f6368;--primary:#1a73e8;--radius:12px}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Noto Sans TC","PingFang TC",system-ui,sans-serif;color:var(--text);background:#f1f3f4}
+  header{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--border);padding:14px 18px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+  header h1{margin:0;font-size:20px;display:flex;align-items:center;gap:8px}
+  header h1 span{font-size:13px;color:#fff;background:var(--primary);padding:2px 8px;border-radius:20px}
+  .header-right{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .pill{font-size:12px;padding:6px 10px;border-radius:20px;border:1px solid var(--border);background:#fff;color:var(--muted)}
+  .pill.ok{border-color:var(--green-b);color:var(--green-b);background:var(--green)}
+  .pill.off{border-color:var(--red-b);color:var(--red-b);background:var(--red)}
+  .btn{border:1px solid var(--border);background:#fff;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:14px;display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{background:var(--gray)}
+  .btn.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .btn.primary:hover{opacity:.9}
+  .btn.small{padding:5px 10px;font-size:12px}
+  .layout{max-width:1280px;margin:16px auto;padding:0 12px;display:grid;grid-template-columns:260px 1fr;gap:16px}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}}
+  .card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+  .card h3{margin:0 0 10px 0;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+  .assignment-item{border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;transition:.15s}
+  .assignment-item:hover{border-color:var(--primary);background:#e8f0fe}
+  .assignment-item.active{border-color:var(--primary);background:#e8f0fe;box-shadow:0 0 0 2px #d2e3fc}
+  .assignment-item .name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .assignment-item .meta{font-size:12px;color:var(--muted);margin:4px 0}
+  .assignment-item .progress{height:6px;background:#e8eaed;border-radius:4px;overflow:hidden;margin-top:6px}
+  .assignment-item .progress div{height:100%;background:var(--green-b);transition:width .3s}
+  .assignment-item .desc{font-size:11px;color:#5f6368;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+  .toolbar input,.toolbar select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px}
+  .toolbar input{flex:1;min-width:160px}
+  .table-wrap{overflow:auto;max-height:62vh;border:1px solid var(--border);border-radius:12px;background:#fff}
+  table{border-collapse:separate;border-spacing:0;width:100%;min-width:700px}
+  th,td{padding:8px 10px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid var(--border);font-size:13px;white-space:nowrap}
+  th{position:sticky;top:0;background:#f8f9fa;z-index:2;font-weight:600}
+  th:first-child,td:first-child{position:sticky;left:0;background:#fff;z-index:3;text-align:left;min-width:110px}
+  th:first-child{z-index:4;background:#f8f9fa}
+  td:first-child{font-weight:500}
+  .cell{cursor:pointer;border-radius:6px;padding:6px 4px;display:block;user-select:none;transition:.15s}
+  .cell.done{background:var(--green);color:#0d652d;border:1px solid #a8dab5}
+  .cell.late{background:var(--yellow);color:#7a5700;border:1px solid #fdd663}
+  .cell.missing{background:var(--red);color:#a50e0e;border:1px solid #f6aea9}
+  .cell:hover{filter:brightness(.95);transform:scale(1.02)}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+  .legend span{display:flex;align-items:center;gap:4px}
+  .dot{width:12px;height:12px;border-radius:4px;border:1px solid var(--border)}
+  .dot.done{background:var(--green);border-color:var(--green-b)}
+  .dot.late{background:var(--yellow);border-color:var(--yellow-b)}
+  .dot.missing{background:var(--red);border-color:var(--red-b)}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+  .stat{border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center}
+  .stat b{font-size:18px;display:block}
+  .stat span{font-size:11px;color:var(--muted)}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+  .modal.show{display:flex}
+  .modal-box{background:#fff;border-radius:16px;max-width:720px;width:100%;max-height:90vh;overflow:auto;padding:18px}
+  .modal-box h3{margin:0 0 12px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:600px){.grid2{grid-template-columns:1fr}}
+  .field{margin-bottom:10px}
+  .field label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+  .field input,.field textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px}
+  .student-list{max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:8px}
+  .student-row{display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px dashed #eee}
+  .student-row:last-child{border:none}
+  .student-row input{flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px}
+  .detail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:48vh;overflow:auto;padding:4px}
+  .detail-card{border:1px solid var(--border);border-radius:10px;padding:8px;text-align:center;position:relative}
+  .detail-card .sname{font-size:12px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .detail-card input.note-input{width:100%;margin-top:6px;padding:4px 6px;font-size:11px;border:1px solid var(--border);border-radius:6px;display:none}
+  .detail-card.has-note input.note-input{display:block}
+  .detail-card.late-card{border-color:var(--yellow-b);background:var(--yellow)}
+  .cell-wrap{position:relative;display:block}
+  .cell-note{position:absolute;top:-4px;right:-4px;font-size:9px;background:var(--primary);color:#fff;border-radius:10px;padding:0 4px;line-height:14px;display:none}
+  .cell-wrap.has-note .cell-note{display:block}
+  .note-tip{font-size:10px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;display:none}
+  .cell-wrap.has-note .note-tip{display:block}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#202124;color:#fff;padding:10px 16px;border-radius:24px;font-size:13px;display:none;z-index:60}
+  .toast.show{display:block}
+  .empty{padding:30px;text-align:center;color:var(--muted)}
+  .small{font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>📚 作業繳交管理 <span>24位</span></h1>
+  <div class="header-right">
+    <span id="syncPill" class="pill ok">● 已自動保存</span>
+    <span id="lastSync" class="small">上次儲存：剛剛</span>
+    <button class="btn small" onclick="openStudentModal()">👥 名單設定</button>
+    <button class="btn small" onclick="exportCSV()">⬇️ 匯出 Excel/CSV</button>
+    <button class="btn small" onclick="document.getElementById('importFile').click()">⬆️ 匯入備份</button>
+    <input type="file" id="importFile" accept=".json,.csv" style="display:none" onchange="importFile(event)">
+    <button class="btn small" onclick="openCloudModal()">☁️ 雲端同步</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="card">
+    <h3>📋 作業清單 <button class="btn small primary" onclick="openAssignmentModal()">＋ 新增</button></h3>
+    <div id="assignmentList"></div>
+    <div style="margin-top:10px;padding:10px;background:#f8f9fa;border-radius:10px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">💡 使用小技巧</div>
+      <div class="small">先按「一鍵全班已交」→ 再點個別格子改 未交/遲交（已交 → 未交 → 遲交）<br>遲交可按「＋備註」填時間（例如 8/24 10:30）<br>點作業名稱可看單份詳情</div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="card">
+      <div class="toolbar">
+        <input id="search" placeholder="🔍 搜尋學生姓名或座號..." oninput="renderTable()">
+        <select id="filter" onchange="renderTable()">
+          <option value="all">全部狀態</option>
+          <option value="missing">只看未交</option>
+          <option value="late">只看遲交</option>
+          <option value="done">只看已交</option>
+        </select>
+        <button class="btn small primary" onclick="markAllDone()">✅ 一鍵全班已交</button>
+        <button class="btn small" onclick="copyMissing()">📋 一鍵複製未交名單</button>
+      </div>
+      <div class="small" style="margin-bottom:8px;color:var(--muted)">💡 先按「一鍵全班已交」把全部標為已交，再點個別格子改為 未交/遲交（順序：已交 → 未交 → 遲交）；遲交可點 ✏️ 填寫遲交時間</div>
+
+      <div id="statsBar" class="stats"></div>
+
+      <div class="table-wrap" id="tableWrap"></div>
+      <div class="legend">
+        <span><i class="dot done"></i> 已交</span>
+        <span><i class="dot missing"></i> 未交</span>
+        <span><i class="dot late"></i> 遲交</span>
+        <span class="small">（點一下依序切換：已交 → 未交 → 遲交）</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 作業新增/編輯 -->
+<div id="assignmentModal" class="modal" onclick="if(event.target===this)closeAssignmentModal()">
+  <div class="modal-box">
+    <h3 id="amTitle">新增作業</h3>
+    <div class="field"><label>作業名稱 *</label><input id="aName" placeholder="例如：國文作文、數學作業一"></div>
+    <div class="grid2">
+      <div class="field"><label>截止日期</label><input id="aDate" type="date"></div>
+      <div class="field"><label>說明（選填）</label><input id="aDesc" placeholder="例如：需交紙本 / 連結"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn" onclick="closeAssignmentModal()">取消</button>
+      <button class="btn primary" onclick="saveAssignment()">儲存</button>
+      <button id="deleteAssignmentBtn" class="btn" style="color:var(--red-b);border-color:var(--red-b);display:none" onclick="deleteAssignment()">刪除此作業</button>
+    </div>
+  </div>
+</div>
+
+<!-- 學生名單 -->
+<div id="studentModal" class="modal" onclick="if(event.target===this)closeStudentModal()">
+  <div class="modal-box">
+    <h3>👥 24位學生名單設定</h3>
+    <p class="small">直接改名字即可，改完自動保存。不想打可貼上「座號 姓名」清單。</p>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <textarea id="bulkInput" placeholder="批次貼上（每行一位，例如：1 王小明）" style="flex:1;height:60px;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12px"></textarea>
+      <button class="btn small" onclick="applyBulk()">套用批次</button>
+    </div>
+    <div id="studentEditors" class="student-list"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn" onclick="closeStudentModal()">關閉</button>
+      <button class="btn primary" onclick="saveStudents()">儲存名單</button>
+    </div>
+  </div>
+</div>
+
+<!-- 單作業詳情 -->
+<div id="detailModal" class="modal" onclick="if(event.target===this)closeDetailModal()">
+  <div class="modal-box">
+    <h3 id="detailTitle">作業詳情</h3>
+    <div id="detailStats" class="stats"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn small primary" onclick="copyMissing(true)">📋 複製此作業未交名單</button>
+      <button class="btn small" onclick="markAllDone()">全部標為已交</button>
+    </div>
+    <div id="detailGrid" class="detail-grid"></div>
+    <div style="text-align:right;margin-top:12px"><button class="btn" onclick="closeDetailModal()">關閉</button></div>
+  </div>
+</div>
+
+<!-- 雲端同步 -->
+<div id="cloudModal" class="modal" onclick="if(event.target===this)closeCloudModal()">
+  <div class="modal-box">
+    <h3>☁️ 雲端同步</h3>
+    <p class="small">換電腦也看得到資料。兩種方式擇一：</p>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
+      <b style="font-size:13px">方式一：分享連結（推薦，不需登入）</b>
+      <p class="small">按「產生分享連結」，把連結傳到另一台電腦打開，就會自動還原最新資料。</p>
+      <button class="btn small primary" onclick="generateShareLink()">🔗 產生分享連結</button>
+      <input id="shareLink" readonly style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:12px;display:none">
+      <div class="small" style="margin-top:6px">小提醒：連結包含目前全部資料，請只傳給信任的老師。</div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+      <b style="font-size:13px">方式二：同步碼（適合口頭傳達）</b>
+      <p class="small">設定一組同步碼，另一台電腦輸入同樣同步碼就能載入。</p>
+      <div style="display:flex;gap:8px">
+        <input id="syncCode" placeholder="例如：class301" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px">
+        <button class="btn small" onclick="saveSyncCode()">儲存同步碼</button>
+        <button class="btn small" onclick="loadSyncCode()">載入</button>
+      </div>
+      <div id="syncStatus" class="small" style="margin-top:6px"></div>
+    </div>
+    <div style="text-align:right;margin-top:12px"><button class="btn" onclick="closeCloudModal()">完成</button></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const STORAGE_KEY = 'homework_tracker_v1';
+const SYNC_PREFIX = 'homework_sync_';
+let students = [];
+let assignments = [];
+let records = {}; // key: studentId-assignmentId -> {status, note}
+let activeAssignmentId = null;
+let editingAssignmentId = null;
+let cloudCode = localStorage.getItem('homework_cloud_code') || '';
+
+function defaultStudents(){
+  return Array.from({length:24},(_,i)=>({id:i+1, name:`學生${i+1}`}))
+}
+function defaultData(){
+  students = defaultStudents();
+  assignments = [{id:1, name:'作業一', dueDate:'', desc:'範例作業，可編輯或刪除'}];
+  records = {};
+  activeAssignmentId = 1;
+}
+function migrateRecords(rawRecords){
+  const out={};
+  Object.entries(rawRecords||{}).forEach(([k,v])=>{
+    if(typeof v==='string') out[k]={status:v, note:''};
+    else if(v && typeof v==='object') out[k]={status: v.status||'missing', note: v.note||''};
+    else out[k]={status:'missing', note:''};
+  });
+  return out;
+}
+function load(){
+  try{
+    // 先看網址有沒有分享資料
+    const hash = location.hash.slice(1);
+    if(hash.startsWith('share=')){
+      try{
+        const json = decodeURIComponent(escape(atob(hash.slice(6))));
+        const data = JSON.parse(json);
+        if(data.students && data.assignments){ students=data.students; assignments=data.assignments; records=migrateRecords(data.records||{}); activeAssignmentId=assignments[0]?.id||null; toast('已從分享連結載入資料'); save(); history.replaceState(null,'',location.pathname); return; }
+      }catch(e){ console.warn(e)}
+    }
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw){ defaultData(); save(); return;}
+    const data = JSON.parse(raw);
+    students = data.students || defaultStudents();
+    // 確保24位
+    if(students.length!==24){
+      if(students.length<24){ for(let i=students.length+1;i<=24;i++) students.push({id:i,name:`學生${i}`}) } else students=students.slice(0,24);
+    }
+    assignments = data.assignments || [];
+    records = migrateRecords(data.records || {});
+    activeAssignmentId = data.activeAssignmentId || (assignments[0]?.id||null);
+    if(!assignments.length){ assignments=[{id:1,name:'作業一',dueDate:'',desc:'範例'}]; activeAssignmentId=1; }
+  }catch(e){ defaultData(); }
+}
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({students, assignments, records, activeAssignmentId}));
+  if(cloudCode) localStorage.setItem(SYNC_PREFIX+cloudCode, JSON.stringify({students, assignments, records}));
+  document.getElementById('lastSync').textContent = '上次儲存：剛剛';
+  document.getElementById('syncPill').className='pill ok';
+  document.getElementById('syncPill').textContent='● 已自動保存';
+  // 雲端有設定就顯示同步
+  if(cloudCode){ document.getElementById('syncStatus') && (document.getElementById('syncStatus').textContent='已同步到同步碼：'+cloudCode+'（換電腦輸入同碼即可載入）'); }
+}
+function uid(){ return Date.now() + Math.floor(Math.random()*1000) }
+
+function renderAssignments(){
+  const list = document.getElementById('assignmentList');
+  list.innerHTML='';
+  assignments.forEach(a=>{
+    const done = students.filter(s=> getStatus(s.id,a.id)==='done').length;
+    const pct = students.length? Math.round(done/students.length*100):0;
+    const overdue = a.dueDate && new Date(a.dueDate) < new Date().setHours(0,0,0,0);
+    const div = document.createElement('div');
+    div.className='assignment-item'+(a.id===activeAssignmentId?' active':'');
+    div.onclick=()=>{ activeAssignmentId=a.id; renderAll(); openDetail(a.id); };
+    div.innerHTML=`<div class="name">${escapeHtml(a.name)} ${overdue?'<span style="font-size:10px;color:#a50e0e;background:#fce8e6;padding:2px 6px;border-radius:10px">已截止</span>':''}</div>
+      <div class="meta">${a.dueDate? '📅 '+a.dueDate : '未設截止'} · ${done}/${students.length} 已交</div>
+      ${a.desc?`<div class="desc">${escapeHtml(a.desc)}</div>`:''}
+      <div class="progress"><div style="width:${pct}%"></div></div>
+      <div style="display:flex;gap:6px;margin-top:6px"><button class="btn small" onclick="event.stopPropagation();openAssignmentModal(${a.id})">✏️ 編輯</button><span class="small" style="align-self:center">${pct}%</span></div>`;
+    list.appendChild(div);
+  });
+}
+function renderStats(){
+  const bar = document.getElementById('statsBar');
+  if(!assignments.length){ bar.innerHTML=''; return;}
+  // 顯示目前選中作業的統計，若無選中則顯示全部平均
+  const a = assignments.find(x=>x.id===activeAssignmentId) || assignments[0];
+  const done = students.filter(s=> getStatus(s.id,a.id)==='done').length;
+  const late = students.filter(s=> getStatus(s.id,a.id)==='late').length;
+  const missing = students.length - done - late;
+  const rate = Math.round(done/students.length*100);
+  bar.innerHTML=`
+    <div class="stat"><b>${assignments.length}</b><span>份作業</span></div>
+    <div class="stat"><b style="color:var(--green-b)">${done}</b><span>已交（${rate}%）</span></div>
+    <div class="stat"><b style="color:var(--red-b)">${missing}</b><span>未交</span> · <b style="color:var(--yellow-b)">${late}</b><span>遲交</span></div>
+  `;
+}
+function getRecord(sid, aid){
+  return records[`${sid}-${aid}`] || {status:'missing', note:''};
+}
+function getStatus(sid, aid){
+  return getRecord(sid,aid).status;
+}
+function getNote(sid, aid){
+  return getRecord(sid,aid).note || '';
+}
+function setStatus(sid, aid, status){
+  const key=`${sid}-${aid}`;
+  const cur=getRecord(sid,aid);
+  records[key]={status, note: cur.note||''};
+}
+function setNote(sid, aid, note){
+  const key=`${sid}-${aid}`;
+  const cur=getRecord(sid,aid);
+  records[key]={status: cur.status, note: (note||'').trim()};
+}
+function cycleStatus(sid, aid){
+  const cur = getStatus(sid,aid);
+  const next = cur==='done' ? 'missing' : cur==='missing' ? 'late' : 'done';
+  setStatus(sid,aid,next); save(); renderAll();
+  // 若切到遲交，自動提示填時間
+  if(next==='late' && !getNote(sid,aid)){
+    setTimeout(()=> openNoteEditor(sid,aid), 200);
+  }
+  const a = assignments.find(x=>x.id===aid);
+  if(a && a.dueDate && next==='done'){
+    const overdue = new Date(a.dueDate) < new Date().setHours(0,0,0,0);
+    if(overdue) toast('已超過截止日期，若算遲交請再點一下切為「遲交」');
+  }
+}
+function openNoteEditor(sid, aid){
+  const curNote=getNote(sid,aid);
+  const input = prompt('填寫備註／遲交時間（例如：2026/8/24 10:30、晚一天、請假）', curNote);
+  if(input===null) return;
+  setNote(sid,aid,input); save(); renderAll();
+  if(input) toast('已儲存備註');
+}
+function renderTable(){
+  const wrap = document.getElementById('tableWrap');
+  const q = document.getElementById('search').value.trim();
+  const filter = document.getElementById('filter').value;
+  let filteredStudents = students.filter(s=> !q || s.name.includes(q) || String(s.id).includes(q));
+  if(filter!=='all'){
+    filteredStudents = filteredStudents.filter(s=>{
+      // 若有多作業，篩選是指「任一作業」或「當前作業」？統一用當前選中作業
+      const a = assignments.find(x=>x.id===activeAssignmentId) || assignments[0];
+      if(!a) return true;
+      return getStatus(s.id,a.id)===filter;
+    });
+  }
+  if(!assignments.length){ wrap.innerHTML='<div class="empty">還沒有作業，按左側「新增」來建立第一份作業</div>'; return;}
+  if(!filteredStudents.length){ wrap.innerHTML='<div class="empty">找不到符合的學生，試試別的關鍵字或篩選</div>'; return;}
+  let html='<table><thead><tr><th>學生 \\ 作業</th>';
+  assignments.forEach(a=>{
+    html+=`<th title="${escapeHtml(a.desc||'')}">${escapeHtml(a.name)}<br><span style="font-weight:400;font-size:11px;color:var(--muted)">${a.dueDate||'未設截止'}</span></th>`;
+  });
+  html+='</tr></thead><tbody>';
+  filteredStudents.forEach(s=>{
+    html+=`<tr><td>${s.id}. ${escapeHtml(s.name)}</td>`;
+    assignments.forEach(a=>{
+      const st=getStatus(s.id,a.id);
+      const note=getNote(s.id,a.id);
+      const label = st==='done'?'已交': st==='late'?'遲交':'未交';
+      const cls = st==='done'?'done': st==='late'?'late':'missing';
+      const hasNote = note? ' has-note':'';
+      const noteHtml = note? `<div class="note-tip" title="${escapeHtml(note)}">✏️ ${escapeHtml(note)}</div>`:''; 
+      html+=`<td><span class="cell-wrap${hasNote}"><span class="cell ${cls}" onclick="cycleStatus(${s.id},${a.id})" title="${note? escapeHtml(note):'點一下切換狀態，遲交可填時間'}">${label}</span><span class="cell-note">✏️</span>${noteHtml}<span style="font-size:10px;cursor:pointer;color:var(--primary);display:block;margin-top:2px" onclick="openNoteEditor(${s.id},${a.id})">${note? '改備註':'＋備註'}</span></span></td>`;
+    });
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  wrap.innerHTML=html;
+}
+function renderAll(){ renderAssignments(); renderStats(); renderTable(); if(document.getElementById('detailModal').classList.contains('show') && activeAssignmentId) renderDetail(activeAssignmentId); }
+
+function openAssignmentModal(id=null){
+  editingAssignmentId=id;
+  const m=document.getElementById('assignmentModal');
+  const a = assignments.find(x=>x.id===id);
+  document.getElementById('amTitle').textContent = a? '編輯作業' : '新增作業';
+  document.getElementById('aName').value = a? a.name : '';
+  document.getElementById('aDate').value = a? a.dueDate : '';
+  document.getElementById('aDesc').value = a? a.desc : '';
+  document.getElementById('deleteAssignmentBtn').style.display = a? 'inline-flex':'none';
+  m.classList.add('show');
+}
+function closeAssignmentModal(){ document.getElementById('assignmentModal').classList.remove('show'); editingAssignmentId=null; }
+function saveAssignment(){
+  const name=document.getElementById('aName').value.trim();
+  const due=document.getElementById('aDate').value;
+  const desc=document.getElementById('aDesc').value.trim();
+  if(!name){ toast('請填作業名稱'); return;}
+  if(editingAssignmentId){
+    const a=assignments.find(x=>x.id===editingAssignmentId);
+    a.name=name; a.dueDate=due; a.desc=desc;
+  }else{
+    const id=uid();
+    assignments.push({id, name, dueDate:due, desc});
+    activeAssignmentId=id;
+  }
+  save(); renderAll(); closeAssignmentModal(); toast('已儲存作業');
+}
+function deleteAssignment(){
+  if(!editingAssignmentId) return;
+  if(!confirm('確定要刪除這份作業？會一併刪除所有學生的繳交紀錄，建議先按匯出備份。')) return;
+  assignments=assignments.filter(x=>x.id!==editingAssignmentId);
+  Object.keys(records).forEach(k=>{ if(k.endsWith('-'+editingAssignmentId)) delete records[k]; });
+  activeAssignmentId = assignments[0]?.id || null;
+  save(); renderAll(); closeAssignmentModal(); toast('已刪除作業');
+}
+
+function openStudentModal(){
+  const c=document.getElementById('studentEditors');
+  c.innerHTML='';
+  students.forEach(s=>{
+    const row=document.createElement('div'); row.className='student-row';
+    row.innerHTML=`<span style="font-size:12px;color:var(--muted);width:28px">${s.id}.</span><input data-id="${s.id}" value="${escapeHtml(s.name)}" placeholder="學生姓名">`;
+    c.appendChild(row);
+  });
+  document.getElementById('studentModal').classList.add('show');
+}
+function closeStudentModal(){ document.getElementById('studentModal').classList.remove('show'); }
+function saveStudents(){
+  document.querySelectorAll('#studentEditors input').forEach(inp=>{
+    const id=parseInt(inp.dataset.id); const s=students.find(x=>x.id===id); if(s) s.name=inp.value.trim()||`學生${id}`;
+  });
+  save(); renderAll(); closeStudentModal(); toast('名單已更新');
+}
+function applyBulk(){
+  const txt=document.getElementById('bulkInput').value.trim();
+  if(!txt){ toast('請先貼上名單'); return;}
+  const lines=txt.split('\n').map(s=>s.trim()).filter(Boolean);
+  lines.forEach((line,i)=>{
+    if(i>=24) return;
+    // 去掉開頭數字
+    const name=line.replace(/^\d+[\.\s、]+/,'').trim() || line;
+    if(students[i]) students[i].name=name;
+  });
+  // 重新渲染編輯器
+  openStudentModal(); toast('已套用批次名單，記得按儲存');
+}
+
+function openDetail(id){ activeAssignmentId=id; renderDetail(id); document.getElementById('detailModal').classList.add('show'); }
+function closeDetailModal(){ document.getElementById('detailModal').classList.remove('show'); }
+function renderDetail(id){
+  const a=assignments.find(x=>x.id===id); if(!a) return;
+  document.getElementById('detailTitle').textContent = `📄 ${a.name} — 詳情`;
+  const done = students.filter(s=> getStatus(s.id,id)==='done').length;
+  const late = students.filter(s=> getStatus(s.id,id)==='late').length;
+  const missing = students.length-done-late;
+  document.getElementById('detailStats').innerHTML=`
+    <div class="stat"><b>${done}/${students.length}</b><span>已交</span></div>
+    <div class="stat"><b style="color:var(--yellow-b)">${late}</b><span>遲交</span></div>
+    <div class="stat"><b style="color:var(--red-b)">${missing}</b><span>未交</span></div>
+  `;
+  const grid=document.getElementById('detailGrid'); grid.innerHTML='';
+  students.forEach(s=>{
+    const st=getStatus(s.id,id);
+    const note=getNote(s.id,id);
+    const label=st==='done'?'已交':st==='late'?'遲交':'未交';
+    const cls=st==='done'?'done':st==='late'?'late':'missing';
+    const card=document.createElement('div'); card.className='detail-card'+(st==='late'?' late-card':'')+(note?' has-note':'');
+    card.innerHTML=`<div class="sname">${s.id}. ${escapeHtml(s.name)}</div><span class="cell ${cls}" style="cursor:pointer" onclick="cycleStatus(${s.id},${id})">${label}</span>
+      <input class="note-input" placeholder="遲交時間／備註" value="${escapeHtml(note)}" onblur="setNote(${s.id},${id},this.value);save();renderAll()" onkeydown="if(event.key==='Enter'){this.blur()}">
+      <div style="font-size:10px;margin-top:4px"><a href="#" onclick="event.preventDefault();openNoteEditor(${s.id},${id})" style="color:var(--primary);text-decoration:none">${note? '✏️ '+escapeHtml(note)+'（點改）':'＋ 備註／遲交時間'}</a></div>`;
+    grid.appendChild(card);
+  });
+}
+function markAllDone(){
+  const targetId = activeAssignmentId || assignments[0]?.id;
+  if(!targetId){ toast('還沒有作業'); return; }
+  const a=assignments.find(x=>x.id===targetId);
+  if(!confirm(`要把「${a? a.name:'這份作業'}」全部標為已交嗎？\n之後再個別點成 未交／遲交 即可，會保留之前的備註。`)) return;
+  students.forEach(s=> setStatus(s.id, targetId, 'done'));
+  save(); renderAll(); toast('已一鍵全班已交，再點個別格子改未交/遲交');
+}
+
+function copyMissing(onlyActiveDetail=false){
+  let targetAssignments = assignments;
+  let header='';
+  if(onlyActiveDetail && activeAssignmentId){
+    targetAssignments = assignments.filter(a=>a.id===activeAssignmentId);
+    header = `${targetAssignments[0].name} 未交名單：\n`;
+  }
+  let lines=[];
+  targetAssignments.forEach(a=>{
+    const miss = students.filter(s=> getStatus(s.id,a.id)==='missing').map(s=> {
+      const n=getNote(s.id,a.id); return `${s.id}. ${s.name}` + (n? `（${n}）`:'');
+    });
+    const late = students.filter(s=> getStatus(s.id,a.id)==='late').map(s=> {
+      const n=getNote(s.id,a.id); return `${s.id}. ${s.name}（遲交${n? '：'+n : ''}）`;
+    });
+    if(miss.length||late.length){
+      lines.push(`【${a.name}】${a.dueDate? ' 截止:'+a.dueDate:''}`);
+      if(miss.length) lines.push('未交：'+miss.join('、'));
+      if(late.length) lines.push('遲交：'+late.join('、'));
+      lines.push('');
+    } else {
+      lines.push(`【${a.name}】全部已交 ✅`);
+      lines.push('');
+    }
+  });
+  if(!lines.length) lines=['目前沒有作業'];
+  const text = header + lines.join('\n');
+  navigator.clipboard.writeText(text).then(()=> toast('已複製未交名單，去 LINE/班群貼上即可')).catch(()=>{ prompt('請手動複製：', text); });
+}
+
+function exportCSV(){
+  // 同時提供 CSV 和 JSON 備份（含備註）
+  let header = ['座號','姓名'];
+  assignments.forEach(a=>{ header.push(a.name); header.push(a.name+'_備註'); });
+  let csv = header.map(h=> `"${String(h).replace(/"/g,'""')}"`).join(',') + '\n';
+  students.forEach(s=>{
+    const row = [s.id, `"${s.name.replace(/"/g,'""')}"`];
+    assignments.forEach(a=>{
+      const st=getStatus(s.id,a.id);
+      const note=getNote(s.id,a.id);
+      row.push(st==='done'?'已交':st==='late'?'遲交':'未交');
+      row.push(`"${note.replace(/"/g,'""')}"`);
+    });
+    csv+=row.join(',')+'\n';
+  });
+  // 加上作業資訊在底部
+  csv += '\n作業,截止日期,說明\n';
+  assignments.forEach(a=>{ csv+=`"${a.name.replace(/"/g,'""')}",${a.dueDate},"${(a.desc||'').replace(/"/g,'""')}"\n`; });
+  download(csv, `作業繳交_${new Date().toISOString().slice(0,10)}.csv`, 'text/csv');
+  // 同時也存 JSON 備份
+  const json = JSON.stringify({students, assignments, records, exportedAt:new Date().toISOString()}, null, 2);
+  download(json, `作業繳交備份_${new Date().toISOString().slice(0,10)}.json`, 'application/json');
+  toast('已下載 CSV 與 JSON 備份（含備註）');
+}
+function download(content, filename, type){
+  const blob=new Blob([content],{type:type+';charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function importFile(e){
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      if(file.name.endsWith('.json')){
+        const data=JSON.parse(reader.result);
+        if(data.students && data.assignments){
+          if(!confirm('匯入會覆蓋目前全部資料，確定嗎？建議先匯出備份。')) return;
+          students=data.students.slice(0,24); while(students.length<24) students.push({id:students.length+1,name:`學生${students.length+1}`});
+          assignments=data.assignments; records=migrateRecords(data.records||{}); activeAssignmentId=assignments[0]?.id||null;
+          save(); renderAll(); toast('已匯入 JSON 備份');
+        } else toast('JSON 格式不正確');
+      } else if(file.name.endsWith('.csv')){
+        // 簡單提示
+        toast('CSV 僅供備份檢視，請用 JSON 匯入還原');
+      }
+    }catch(err){ toast('匯入失敗：'+err.message); }
+    e.target.value='';
+  };
+  reader.readAsText(file,'utf-8');
+}
+
+// 雲端同步
+function openCloudModal(){ document.getElementById('cloudModal').classList.add('show'); document.getElementById('syncCode').value=cloudCode; document.getElementById('syncStatus').textContent= cloudCode? '目前同步碼：'+cloudCode : '尚未設定同步碼'; }
+function closeCloudModal(){ document.getElementById('cloudModal').classList.remove('show'); }
+function saveSyncCode(){
+  const code=document.getElementById('syncCode').value.trim();
+  if(!code){ toast('請輸入同步碼'); return;}
+  cloudCode=code; localStorage.setItem('homework_cloud_code', cloudCode);
+  save(); toast('同步碼已儲存，資料已同步');
+}
+function loadSyncCode(){
+  const code=document.getElementById('syncCode').value.trim();
+  if(!code){ toast('請輸入同步碼'); return;}
+  const raw=localStorage.getItem(SYNC_PREFIX+code);
+  if(!raw){ toast('找不到這個同步碼的資料（可能在別台電腦）— 請改用分享連結'); return;}
+  if(!confirm('載入會覆蓋目前資料，確定嗎？')) return;
+  const data=JSON.parse(raw);
+  students=data.students; assignments=data.assignments; records=migrateRecords(data.records||{}); activeAssignmentId=assignments[0]?.id||null;
+  cloudCode=code; localStorage.setItem('homework_cloud_code', cloudCode);
+  save(); renderAll(); toast('已載入同步碼資料');
+}
+function generateShareLink(){
+  const data={students, assignments, records};
+  const json=JSON.stringify(data);
+  const b64=btoa(unescape(encodeURIComponent(json)));
+  const link=location.origin + location.pathname + '#share=' + b64;
+  const inp=document.getElementById('shareLink');
+  inp.style.display='block'; inp.value=link;
+  navigator.clipboard.writeText(link).then(()=> toast('分享連結已複製，傳到另一台電腦打開即可')).catch(()=> toast('已產生分享連結，請手動複製'));
+}
+
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200);
+}
+
+// init
+load();
+if(cloudCode) document.getElementById('syncStatus') && (document.getElementById('syncStatus').textContent='已同步到：'+cloudCode);
+renderAll();
+// 自動每30秒提示已保存
+setInterval(save, 30000);
+</script>
+</body>
+</html>
