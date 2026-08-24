@@ -114,6 +114,8 @@
   .report-table th{background:#f8f9fa}
   .report-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
   .report-summary div{border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center}
+  .cloud-config{border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:#f8f9fa}
+  .cloud-config input{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;margin:4px 0}
   .report-summary b{font-size:16px;display:block}
   @media print{
     header,.layout .card .toolbar,.week-filter,#weekChips,.legend{display:none !important}
@@ -234,9 +236,24 @@
 <div id="cloudModal" class="modal" onclick="if(event.target===this)closeCloudModal()">
   <div class="modal-box">
     <h3>☁️ 雲端同步</h3>
-    <p class="small">換電腦也看得到資料。兩種方式擇一：</p>
+    <p class="small">換電腦也看得到資料。先完成「真雲端」設定，之後自動同步。</p>
+    <div class="cloud-config">
+      <b style="font-size:13px">🌟 真雲端（Supabase）— 換電腦自動同步（推薦）</b>
+      <p class="small">照下方 3 步驟建立免費雲端，完成後兩台電腦打開同網址就會自動同步，不用再手動匯入。</p>
+      <div style="font-size:11px;background:#fff;border:1px dashed var(--border);border-radius:6px;padding:8px;margin:6px 0">
+        ① 到 <a href="https://supabase.com" target="_blank">supabase.com ↗</a> 建專案 → ② 左側 Table Editor 建表 <code>homework_data</code>（id=text, data=jsonb）→ ③ 在 Settings → API 複製 URL 與 anon key 貼到下方
+      </div>
+      <label class="small">Supabase URL</label><input id="sbUrl" placeholder="https://xxx.supabase.co">
+      <label class="small">Supabase anon key</label><input id="sbKey" placeholder="eyJhbGciOi...">
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn small primary" onclick="saveSupabaseConfig()">💾 儲存並同步</button>
+        <button class="btn small" onclick="testSupabase()">🔍 測試連線</button>
+        <button class="btn small" onclick="syncFromCloud()">⬇️ 從雲端載入</button>
+      </div>
+      <div id="sbStatus" class="small" style="margin-top:6px"></div>
+    </div>
     <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
-      <b style="font-size:13px">方式一：分享連結（推薦，不需登入）</b>
+      <b style="font-size:13px">方式一：分享連結（免設定）</b>
       <p class="small">按「產生分享連結」，把連結傳到另一台電腦打開，就會自動還原最新資料。</p>
       <button class="btn small primary" onclick="generateShareLink()">🔗 產生分享連結</button>
       <input id="shareLink" readonly style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:12px;display:none">
@@ -244,7 +261,7 @@
     </div>
     <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
       <b style="font-size:13px">方式二：同步碼（適合口頭傳達）</b>
-      <p class="small">設定一組同步碼，另一台電腦輸入同樣同步碼就能載入。</p>
+      <p class="small">設定一組同步碼，另一台電腦輸入同樣同步碼就能載入（僅同一瀏覽器可用）。</p>
       <div style="display:flex;gap:8px">
         <input id="syncCode" placeholder="例如：class301" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px">
         <button class="btn small" onclick="saveSyncCode()">儲存同步碼</button>
@@ -273,6 +290,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -285,6 +303,10 @@ let activeAssignmentId = null;
 let editingAssignmentId = null;
 let currentWeekFilter = localStorage.getItem('homework_week_filter') || 'all';
 let cloudCode = localStorage.getItem('homework_cloud_code') || '';
+let supabase = null;
+let supabaseUrl = localStorage.getItem('supabase_url') || '';
+let supabaseKey = localStorage.getItem('supabase_key') || '';
+const CLOUD_ROW_ID = 'main'; // 固定用同一列存 24 人資料
 
 function defaultStudents(){
   return Array.from({length:24},(_,i)=>({id:i+1, name:`學生${i+1}`}))
@@ -336,11 +358,85 @@ function save(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify({students, assignments, records, activeAssignmentId}));
   if(cloudCode) localStorage.setItem(SYNC_PREFIX+cloudCode, JSON.stringify({students, assignments, records}));
   localStorage.setItem('homework_week_filter', currentWeekFilter);
-  document.getElementById('lastSync').textContent = '上次儲存：剛剛';
-  document.getElementById('syncPill').className='pill ok';
-  document.getElementById('syncPill').textContent='● 已自動保存';
-  // 雲端有設定就顯示同步
-  if(cloudCode){ document.getElementById('syncStatus') && (document.getElementById('syncStatus').textContent='已同步到同步碼：'+cloudCode+'（換電腦輸入同碼即可載入）'); }
+  const pill=document.getElementById('syncPill');
+  const last=document.getElementById('lastSync');
+  if(pill) { pill.className='pill ok'; pill.textContent='● 已自動保存'; }
+  if(last) last.textContent = '上次儲存：剛剛';
+  if(cloudCode){ const el=document.getElementById('syncStatus'); if(el) el.textContent='已同步到同步碼：'+cloudCode+'（換電腦輸入同碼即可載入）'; }
+  // 若有設定 Supabase，自動同步到雲端
+  if(supabase) saveToCloud();
+}
+function initSupabase(){
+  supabaseUrl = localStorage.getItem('supabase_url') || '';
+  supabaseKey = localStorage.getItem('supabase_key') || '';
+  if(supabaseUrl && supabaseKey && window.supabase){
+    try{
+      supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+      // 回填輸入框
+      const urlInput=document.getElementById('sbUrl'); if(urlInput) urlInput.value=supabaseUrl;
+      const keyInput=document.getElementById('sbKey'); if(keyInput) keyInput.value=supabaseKey;
+      return true;
+    }catch(e){ console.warn('Supabase init failed', e); supabase=null; return false; }
+  }
+  return false;
+}
+async function saveToCloud(){
+  if(!supabase) return;
+  try{
+    document.getElementById('sbStatus') && (document.getElementById('sbStatus').textContent='⏳ 同步到雲端中…');
+    const payload={students, assignments, records, activeAssignmentId, updatedAt: new Date().toISOString()};
+    const {error} = await supabase.from('homework_data').upsert({id:CLOUD_ROW_ID, data: payload, updated_at: new Date().toISOString()}, {onConflict:'id'});
+    if(error) throw error;
+    const el=document.getElementById('sbStatus'); if(el) el.textContent='✅ 已同步到雲端（換電腦自動載入） — ' + new Date().toLocaleTimeString('zh-TW');
+    const pill=document.getElementById('syncPill'); if(pill){ pill.textContent='● 已同步到雲端'; pill.className='pill ok'; }
+  }catch(e){
+    console.warn(e);
+    const el=document.getElementById('sbStatus'); if(el) el.textContent='⚠️ 雲端同步失敗：' + (e.message||e);
+  }
+}
+async function syncFromCloud(){
+  if(!supabase){ toast('請先設定 Supabase URL 與 anon key'); return; }
+  try{
+    const el=document.getElementById('sbStatus'); if(el) el.textContent='⏳ 從雲端載入中…';
+    const {data, error} = await supabase.from('homework_data').select('data').eq('id', CLOUD_ROW_ID).single();
+    if(error) throw error;
+    const d=data?.data;
+    if(!d || !d.students) { if(el) el.textContent='雲端還沒有資料，先在這台按儲存會自動建立'; return; }
+    students=(d.students||[]).slice(0,24); while(students.length<24) students.push({id:students.length+1,name:`學生${students.length+1}`});
+    assignments=(d.assignments||[]).map(a=> ({...a, week: a.week? parseInt(a.week):1}));
+    records=migrateRecords(d.records||{});
+    activeAssignmentId=d.activeAssignmentId || assignments[0]?.id || null;
+    save(); renderAll();
+    if(el) el.textContent='✅ 已從雲端載入 — ' + new Date().toLocaleTimeString('zh-TW');
+    toast('已從雲端同步最新資料');
+  }catch(e){
+    console.warn(e);
+    const el=document.getElementById('sbStatus'); if(el) el.textContent='⚠️ 載入失敗：' + (e.message||e);
+  }
+}
+function saveSupabaseConfig(){
+  const url=document.getElementById('sbUrl').value.trim();
+  const key=document.getElementById('sbKey').value.trim();
+  if(!url || !key){ toast('請填 URL 與 anon key'); return; }
+  localStorage.setItem('supabase_url', url);
+  localStorage.setItem('supabase_key', key);
+  supabaseUrl=url; supabaseKey=key;
+  if(initSupabase()){
+    document.getElementById('sbStatus').textContent='✅ 已儲存設定，正在同步…';
+    saveToCloud();
+    toast('已設定 Supabase，自動同步已啟用');
+  } else toast('設定失敗，請檢查金鑰');
+}
+async function testSupabase(){
+  if(!initSupabase()){ toast('請先填 URL 與 key'); return; }
+  try{
+    const {error} = await supabase.from('homework_data').select('id').limit(1);
+    if(error) throw error;
+    document.getElementById('sbStatus').textContent='✅ 連線成功！資料表可讀寫';
+    toast('連線成功');
+  }catch(e){
+    document.getElementById('sbStatus').textContent='⚠️ 連線失敗：' + (e.message||e) + ' — 請檢查 SQL 是否已建表 homework_data';
+  }
 }
 function uid(){ return Date.now() + Math.floor(Math.random()*1000) }
 function getWeeks(){
@@ -714,7 +810,17 @@ function importFile(e){
 }
 
 // 雲端同步
-function openCloudModal(){ document.getElementById('cloudModal').classList.add('show'); document.getElementById('syncCode').value=cloudCode; document.getElementById('syncStatus').textContent= cloudCode? '目前同步碼：'+cloudCode : '尚未設定同步碼'; }
+function openCloudModal(){
+  document.getElementById('cloudModal').classList.add('show');
+  document.getElementById('syncCode').value=cloudCode;
+  const ss=document.getElementById('syncStatus'); if(ss) ss.textContent= cloudCode? '目前同步碼：'+cloudCode : '尚未設定同步碼';
+  // 回填 Supabase
+  const url=document.getElementById('sbUrl'); if(url) url.value=localStorage.getItem('supabase_url')||'';
+  const key=document.getElementById('sbKey'); if(key) key.value=localStorage.getItem('supabase_key')||'';
+  const sbStatus=document.getElementById('sbStatus');
+  if(supabase && sbStatus) sbStatus.textContent='✅ 已設定 Supabase，自動同步中';
+  else if(sbStatus && !supabase) sbStatus.textContent='尚未設定真雲端，完成上方 3 步驟後可自動同步';
+}
 function closeCloudModal(){ document.getElementById('cloudModal').classList.remove('show'); }
 function saveSyncCode(){
   const code=document.getElementById('syncCode').value.trim();
@@ -853,10 +959,15 @@ function toast(msg){
 
 // init
 load();
-if(cloudCode) document.getElementById('syncStatus') && (document.getElementById('syncStatus').textContent='已同步到：'+cloudCode);
+if(cloudCode) { const el=document.getElementById('syncStatus'); if(el) el.textContent='已同步到：'+cloudCode; }
 renderAll();
-// 自動每30秒提示已保存
-setInterval(save, 30000);
+initSupabase();
+if(supabase){
+  // 自動從雲端載入（若雲端有較新資料會覆蓋本機，第一次使用會自動建立）
+  setTimeout(()=> syncFromCloud(), 800);
+}
+// 自動每30秒同步到雲端（若有設定 Supabase）
+setInterval(()=>{ save(); }, 30000);
 </script>
 </body>
 </html>
