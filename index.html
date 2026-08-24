@@ -106,6 +106,22 @@
   .toast.show{display:block}
   .empty{padding:30px;text-align:center;color:var(--muted)}
   .small{font-size:11px;color:var(--muted)}
+  .report-paper{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px;max-height:60vh;overflow:auto}
+  .report-paper h2{margin:0 0 4px 0;font-size:18px}
+  .report-paper .sub{font-size:12px;color:var(--muted);margin-bottom:12px}
+  .report-table{width:100%;border-collapse:collapse;font-size:12px;margin:10px 0}
+  .report-table th,.report-table td{border:1px solid var(--border);padding:6px 8px;text-align:center}
+  .report-table th{background:#f8f9fa}
+  .report-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+  .report-summary div{border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center}
+  .report-summary b{font-size:16px;display:block}
+  @media print{
+    header,.layout .card .toolbar,.week-filter,#weekChips,.legend{display:none !important}
+    body{background:#fff}
+    .modal{position:static;background:none;padding:0}
+    .modal-box{max-width:none;box-shadow:none;border:none}
+    .report-paper{border:none;max-height:none}
+  }
 </style>
 </head>
 <body>
@@ -148,6 +164,7 @@
         </select>
         <button class="btn small primary" onclick="markAllDone()">✅ 一鍵全班已交</button>
         <button class="btn small" onclick="copyMissing()">📋 一鍵複製未交名單</button>
+        <button class="btn small" style="background:#e8f0fe;border-color:var(--primary);color:var(--primary)" onclick="openReportModal()">📊 產生週報</button>
       </div>
       <div class="small" style="margin-bottom:8px;color:var(--muted)">💡 週次篩選後只顯示該週作業；先按「一鍵全班已交」再改未交/遲交（已交 → 未交 → 遲交）</div>
 
@@ -236,6 +253,23 @@
       <div id="syncStatus" class="small" style="margin-top:6px"></div>
     </div>
     <div style="text-align:right;margin-top:12px"><button class="btn" onclick="closeCloudModal()">完成</button></div>
+  </div>
+</div>
+
+<!-- 週報 -->
+<div id="reportModal" class="modal" onclick="if(event.target===this)closeReportModal()">
+  <div class="modal-box" style="max-width:860px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <h3 style="margin:0">📊 作業繳交週報</h3>
+      <select id="reportWeek" onchange="renderReport()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px"></select>
+    </div>
+    <div id="reportContent" class="report-paper" style="margin-top:12px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px">
+      <button class="btn small" onclick="copyReport()">📋 複製文字</button>
+      <button class="btn small" onclick="downloadReport()">⬇️ 匯出 HTML</button>
+      <button class="btn small primary" onclick="printReport()">🖨️ 列印</button>
+      <button class="btn small" onclick="closeReportModal()">關閉</button>
+    </div>
   </div>
 </div>
 
@@ -707,6 +741,109 @@ function generateShareLink(){
   const inp=document.getElementById('shareLink');
   inp.style.display='block'; inp.value=link;
   navigator.clipboard.writeText(link).then(()=> toast('分享連結已複製，傳到另一台電腦打開即可')).catch(()=> toast('已產生分享連結，請手動複製'));
+}
+
+// 週報
+function openReportModal(){
+  const sel=document.getElementById('reportWeek');
+  const weeks=getWeeks();
+  sel.innerHTML='';
+  const allOpt=document.createElement('option'); allOpt.value='all'; allOpt.textContent='全部週次'; sel.appendChild(allOpt);
+  weeks.forEach(w=>{
+    const o=document.createElement('option'); o.value=w; o.textContent=`第 ${w} 週`;
+    sel.appendChild(o);
+  });
+  // 預設跟目前篩選一致
+  sel.value = currentWeekFilter;
+  if(!weeks.includes(parseInt(sel.value)) && sel.value!=='all') sel.value='all';
+  document.getElementById('reportModal').classList.add('show');
+  renderReport();
+}
+function closeReportModal(){ document.getElementById('reportModal').classList.remove('show'); }
+function getReportAssignments(){
+  const w=document.getElementById('reportWeek').value;
+  if(w==='all') return assignments;
+  return assignments.filter(a=> String(a.week)===String(w));
+}
+function renderReport(){
+  const w=document.getElementById('reportWeek').value;
+  const list=getReportAssignments();
+  const container=document.getElementById('reportContent');
+  const weekLabel = w==='all' ? '全部週次' : `第 ${w} 週`;
+  const dateStr=new Date().toLocaleDateString('zh-TW');
+  if(!list.length){
+    container.innerHTML=`<h2>${weekLabel} 作業繳交週報</h2><div class="sub">產生日期：${dateStr}</div><div class="empty">本週還沒有作業</div>`;
+    return;
+  }
+  // 統計
+  let totalDone=0, totalLate=0, totalMissing=0;
+  list.forEach(a=> students.forEach(s=>{
+    const st=getStatus(s.id,a.id);
+    if(st==='done') totalDone++; else if(st==='late') totalLate++; else totalMissing++;
+  }));
+  const totalSlots=students.length*list.length;
+  const rate=totalSlots? Math.round(totalDone/totalSlots*100):0;
+  // 每份作業明細
+  let assignmentRows='';
+  list.forEach(a=>{
+    const done=students.filter(s=>getStatus(s.id,a.id)==='done').length;
+    const late=students.filter(s=>getStatus(s.id,a.id)==='late').length;
+    const missing=students.filter(s=>getStatus(s.id,a.id)==='missing').length;
+    const missList=students.filter(s=>getStatus(s.id,a.id)==='missing').map(s=> `${s.id}. ${escapeHtml(s.name)}`).join('、') || '—';
+    const lateList=students.filter(s=>getStatus(s.id,a.id)==='late').map(s=> {
+      const n=getNote(s.id,a.id); return `${s.id}. ${escapeHtml(s.name)}${n? '('+escapeHtml(n)+')':''}`;
+    }).join('、') || '—';
+    assignmentRows+=`<tr><td><span class="week-badge">第${a.week}週</span> ${escapeHtml(a.name)}<br><span style="font-size:11px;color:var(--muted)">${a.dueDate||'未設截止'}</span></td><td>${done}/${students.length}<br><span style="font-size:11px;color:var(--green-b)">${Math.round(done/students.length*100)}%</span></td><td style="color:var(--red-b)">${missing}<br><span style="font-size:10px;color:var(--muted)">${escapeHtml(missList)}</span></td><td style="color:var(--yellow-b)">${late}<br><span style="font-size:10px;color:var(--muted)">${escapeHtml(lateList)}</span></td></tr>`;
+  });
+  // 每位學生總覽
+  let studentRows='';
+  students.forEach(s=>{
+    const done=list.filter(a=>getStatus(s.id,a.id)==='done').length;
+    const late=list.filter(a=>getStatus(s.id,a.id)==='late').length;
+    const missing=list.filter(a=>getStatus(s.id,a.id)==='missing').length;
+    const status = missing===0 && late===0 ? '<span style="color:var(--green-b)">✅ 全部已交</span>' : `<span style="color:var(--red-b)">${missing}未交</span> <span style="color:var(--yellow-b)">${late}遲交</span>`;
+    studentRows+=`<tr><td>${s.id}. ${escapeHtml(s.name)}</td><td>${done}/${list.length}</td><td>${status}</td></tr>`;
+  });
+  container.innerHTML=`
+    <h2>📚 ${weekLabel} 作業繳交週報</h2>
+    <div class="sub">產生日期：${dateStr} ｜ 學生 24 位 ｜ 作業 ${list.length} 份</div>
+    <div class="report-summary">
+      <div><b>${list.length}</b><span>份作業</span></div>
+      <div><b style="color:var(--green-b)">${totalDone}</b><span>已交人次（${rate}%）</span></div>
+      <div><b style="color:var(--red-b)">${totalMissing}</b><span>未交</span></div>
+      <div><b style="color:var(--yellow-b)">${totalLate}</b><span>遲交</span></div>
+    </div>
+    <h3 style="font-size:14px;margin:12px 0 6px 0">📌 各作業明細</h3>
+    <table class="report-table">
+      <tr><th>作業</th><th>已交</th><th>未交名單</th><th>遲交名單</th></tr>
+      ${assignmentRows}
+    </table>
+    <h3 style="font-size:14px;margin:12px 0 6px 0">👥 每位學生繳交總覽</h3>
+    <table class="report-table">
+      <tr><th>學生</th><th>已交</th><th>狀況</th></tr>
+      ${studentRows}
+    </table>
+    <div style="font-size:11px;color:var(--muted);margin-top:10px">備註：遲交時間顯示於括號內；本週報可直接列印或複製到班群公告</div>
+  `;
+}
+function getReportText(){
+  const el=document.getElementById('reportContent');
+  // 去掉 HTML 標籤，轉為純文字
+  return el.innerText || el.textContent;
+}
+function copyReport(){
+  const text=getReportText();
+  navigator.clipboard.writeText(text).then(()=>toast('週報文字已複製')).catch(()=>prompt('請手動複製：', text));
+}
+function printReport(){ window.print(); }
+function downloadReport(){
+  const content=document.getElementById('reportContent').innerHTML;
+  const html=`<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><title>作業繳交週報</title><style>body{font-family:sans-serif;padding:20px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #dadce0;padding:6px;text-align:center;font-size:12px} th{background:#f8f9fa}</style></head><body>${content}</body></html>`;
+  const blob=new Blob([html],{type:'text/html'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`週報_${document.getElementById('reportWeek').value}_${new Date().toISOString().slice(0,10)}.html`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('已匯出週報 HTML');
 }
 
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
