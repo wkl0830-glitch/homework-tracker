@@ -116,6 +116,10 @@
   .report-summary div{border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center}
   body.locked .cell{pointer-events:none;opacity:.6}
   body.locked .btn.primary{opacity:.4;pointer-events:none}
+  body.role-assistant .admin-only{display:none !important}
+  body.role-assistant .assignment-item button{display:none !important}
+  body.role-assistant .assignment-item{cursor:default}
+  body.role-assistant #assistantBanner{display:block !important}
   .cloud-config{border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:#f8f9fa}
   .cloud-config input{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;margin:4px 0}
   .report-summary b{font-size:16px;display:block}
@@ -136,17 +140,18 @@
     <span id="syncPill" class="pill ok">● 已自動保存</span>
     <span id="lastSync" class="small">上次儲存：剛剛</span>
     <button id="authBtn" class="btn small" onclick="openAuthModal()">🔑 通關密碼</button>
-    <button id="btnStudent" class="btn small" onclick="openStudentModal()">👥 名單設定</button>
-    <button class="btn small" onclick="exportCSV()">⬇️ 匯出 Excel/CSV</button>
-    <button class="btn small" onclick="document.getElementById('importFile').click()">⬆️ 匯入備份</button>
+    <button id="btnStudent" class="btn small admin-only" onclick="openStudentModal()">👥 名單設定</button>
+    <button class="btn small admin-only" onclick="exportCSV()">⬇️ 匯出 Excel/CSV</button>
+    <button class="btn small admin-only" onclick="document.getElementById('importFile').click()">⬆️ 匯入備份</button>
     <input type="file" id="importFile" accept=".json,.csv" style="display:none" onchange="importFile(event)">
-    <button class="btn small" onclick="openCloudModal()">☁️ 雲端同步</button>
+    <button class="btn small admin-only" onclick="openCloudModal()">☁️ 雲端同步</button>
   </div>
 </header>
+<div id="assistantBanner" class="assistant-banner" style="display:none;max-width:1280px;margin:8px auto -4px auto;padding:8px 12px;background:#fff3cd;border:1px solid #ffe69c;border-radius:8px;text-align:center;font-size:12px">👧 小老師模式：僅可打勾與備註，其他設定已隱藏</div>
 
 <div class="layout">
   <aside class="card">
-    <h3>📋 作業清單 <button class="btn small primary" onclick="openAssignmentModal()">＋ 新增</button></h3>
+    <h3>📋 作業清單 <button class="btn small primary admin-only" onclick="openAssignmentModal()">＋ 新增</button></h3>
     <div class="week-filter" id="weekChips"></div>
     <div id="assignmentList"></div>
     <div style="margin-top:10px;padding:10px;background:#f8f9fa;border-radius:10px">
@@ -168,9 +173,9 @@
           <option value="late">只看遲交</option>
           <option value="done">只看已交</option>
         </select>
-        <button class="btn small primary" onclick="markAllDone()">✅ 一鍵全班已交</button>
-        <button class="btn small" onclick="copyMissing()">📋 一鍵複製未交名單</button>
-        <button class="btn small" style="background:#e8f0fe;border-color:var(--primary);color:var(--primary)" onclick="openReportModal()">📊 產生週報</button>
+        <button class="btn small primary admin-only" onclick="markAllDone()">✅ 一鍵全班已交</button>
+        <button class="btn small admin-only" onclick="copyMissing()">📋 一鍵複製未交名單</button>
+        <button class="btn small admin-only" style="background:#e8f0fe;border-color:var(--primary);color:var(--primary)" onclick="openReportModal()">📊 產生週報</button>
       </div>
       <div class="small" style="margin-bottom:8px;color:var(--muted)">💡 週次篩選後只顯示該週作業；先按「一鍵全班已交」再改未交/遲交（已交 → 未交 → 遲交）</div>
 
@@ -496,6 +501,7 @@ function updateAuthUI(){
   }
   const locked = hasAny && !isUnlocked;
   document.body.classList.toggle('locked', locked);
+  document.body.classList.toggle('role-assistant', hasAny && userRole==='assistant');
   // 小老師限制：隱藏名單、雲端設定輸入
   const btnStudent=document.getElementById('btnStudent');
   if(btnStudent) { btnStudent.style.display = (hasAny && userRole==='assistant') ? 'none' : 'inline-flex'; }
