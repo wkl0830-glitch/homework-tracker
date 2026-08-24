@@ -245,7 +245,7 @@
       <b style="font-size:13px">🌟 真雲端（Supabase）— 換電腦自動同步（推薦）</b>
       <p class="small">照下方 3 步驟建立免費雲端，完成後兩台電腦打開同網址就會自動同步，不用再手動匯入。</p>
       <div style="font-size:11px;background:#fff;border:1px dashed var(--border);border-radius:6px;padding:8px;margin:6px 0">
-        ① 到 <a href="https://sbClient.com" target="_blank">sbClient.com ↗</a> 建專案 → ② Table Editor 建表 <code>homework_data</code>（id=text, data=jsonb）→ ③ SQL Editor 貼上 RLS 設定（見下方）→ ④ Settings → API 複製 URL 與 anon key 貼到下方 → ⑤ 按「註冊」建老師帳號並登入
+        ① 到 <a href="https://supabase.com" target="_blank">supabase.com ↗</a> 建專案 → ② Table Editor 建表 <code>homework_data</code>（id=text, data=jsonb）→ ③ SQL Editor 貼上 RLS 設定（見下方）→ ④ Settings → API 複製 URL 與 anon key 貼到下方 → ⑤ 按「註冊」建老師帳號並登入
       </div>
       <details style="font-size:11px;margin:6px 0"><summary style="cursor:pointer;color:var(--primary)">點開看建表 SQL（通關密碼模式，只需執行一次）</summary>
         <pre style="background:#f8f9fa;padding:8px;border-radius:6px;overflow:auto;white-space:pre-wrap;font-size:10px">create table if not exists homework_data (
@@ -260,7 +260,7 @@ alter table homework_data disable row level security;
 -- alter table homework_data enable row level security;
 -- create policy "allow_authenticated" on homework_data for all using (auth.role()='authenticated') with check (auth.role()='authenticated');</pre>
       </details>
-      <label class="small">Supabase URL</label><input id="sbUrl" placeholder="https://xxx.sbClient.co">
+      <label class="small">Supabase URL</label><input id="sbUrl" placeholder="https://xxx.supabase.co">
       <label class="small">Supabase anon key</label><input id="sbKey" placeholder="eyJhbGciOi...">
       <div style="display:flex;gap:6px;margin-top:6px">
         <button class="btn small primary" onclick="saveSupabaseConfig()">💾 儲存並同步</button>
@@ -336,7 +336,19 @@ alter table homework_data disable row level security;
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@sbClient/sbClient-js@2/dist/umd/sbClient.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+// CDN 備用：若 jsdelivr 被擋，改試 unpkg
+setTimeout(()=>{
+  if(!window.supabase){
+    var s=document.createElement('script');
+    s.src='https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+    s.onload=()=>{ console.log('Supabase fallback loaded'); if(typeof initSupabase==='function') initSupabase(); };
+    s.onerror=()=>{ console.warn('Supabase CDN both failed'); };
+    document.head.appendChild(s);
+  }
+}, 1500);
+</script>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -418,20 +430,28 @@ function hashPasscode(s){ // 簡單可逆但夠擋一般人，若要更安全可
   try{ return btoa(unescape(encodeURIComponent(s))); }catch(e){ return s; }
 }
 function initSupabase(){
-  supabaseUrl = localStorage.getItem('supabase_url') || '';
-  supabaseKey = localStorage.getItem('supabase_key') || '';
+  supabaseUrl = (localStorage.getItem('supabase_url') || '').trim();
+  supabaseKey = (localStorage.getItem('supabase_key') || '').trim();
   passcodeHash = localStorage.getItem('homework_passcode_hash')||'';
-  if(supabaseUrl && supabaseKey && window.supabase){
-    try{
-      sbClient = window.supabase.createClient(supabaseUrl, supabaseKey);
-      const urlInput=document.getElementById('sbUrl'); if(urlInput) urlInput.value=supabaseUrl;
-      const keyInput=document.getElementById('sbKey'); if(keyInput) keyInput.value=supabaseKey;
-      updateAuthUI();
-      return true;
-    }catch(e){ console.warn('Supabase init failed', e); sbClient=null; return false; }
+  const urlInput=document.getElementById('sbUrl'); if(urlInput) urlInput.value=supabaseUrl;
+  const keyInput=document.getElementById('sbKey'); if(keyInput) keyInput.value=supabaseKey;
+  if(!supabaseUrl || !supabaseKey){
+    updateAuthUI(); return false;
   }
-  updateAuthUI();
-  return false;
+  if(!window.supabase){
+    const el=document.getElementById('sbStatus'); if(el) el.textContent='⚠️ Supabase 程式庫未載入（cdn.jsdelivr.net 可能被擋），請改用無痕視窗或換網路再試';
+    updateAuthUI(); return false;
+  }
+  try{
+    // 新版 sb_publishable_ 和舊版 eyJ 都支援
+    sbClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+    updateAuthUI();
+    return true;
+  }catch(e){
+    console.warn('Supabase init failed', e);
+    const el=document.getElementById('sbStatus'); if(el) el.textContent='⚠️ 初始化失敗：' + (e.message||e);
+    sbClient=null; updateAuthUI(); return false;
+  }
 }
 function updateAuthUI(){
   const status=document.getElementById('authStatus');
@@ -560,18 +580,39 @@ async function syncFromCloud(){
 function saveSupabaseConfig(){
   const url=document.getElementById('sbUrl').value.trim();
   const key=document.getElementById('sbKey').value.trim();
-  if(!url || !key){ toast('請填 URL 與 anon key'); return; }
+  const msgEl=document.getElementById('sbStatus');
+  if(!url || !key){ toast('請填 URL 與 anon key'); if(msgEl) msgEl.textContent='⚠️ 請填 URL 與 key'; return; }
+  if(!url.startsWith('https://')){ if(msgEl) msgEl.textContent='⚠️ URL 格式錯誤，應為 https://xxx.supabase.co'; toast('URL 需以 https:// 開頭'); return; }
   localStorage.setItem('supabase_url', url);
   localStorage.setItem('supabase_key', key);
   supabaseUrl=url; supabaseKey=key;
+  if(!window.supabase){ if(msgEl) msgEl.textContent='⚠️ cdn.jsdelivr.net 被擋，請換網路或用手機 4G 再試'; toast('Supabase 程式庫未載入'); return; }
   if(initSupabase()){
-    document.getElementById('sbStatus').textContent='✅ 已儲存設定，正在同步…';
+    if(msgEl) msgEl.textContent='✅ 已儲存設定，正在同步…';
     saveToCloud();
     toast('已設定 Supabase，自動同步已啟用');
-  } else toast('設定失敗，請檢查金鑰');
+  } else {
+    if(msgEl) msgEl.textContent='⚠️ 設定失敗：' + (msgEl.textContent||'請檢查 URL/key 是否貼齊，無多餘空白');
+    toast('設定失敗，請檢查 URL/key');
+  }
 }
 async function testSupabase(){
-  if(!initSupabase()){ toast('請先填 URL 與 key'); return; }
+  const url=document.getElementById('sbUrl').value.trim() || supabaseUrl;
+  const key=document.getElementById('sbKey').value.trim() || supabaseKey;
+  if(!url || !key){ toast('請先填 URL 與 key'); return; }
+  if(!initSupabase()){
+    // 試用 fetch 直接測試（不經 JS 套件）
+    try{
+      const r=await fetch(url + '/rest/v1/homework_data?select=id&limit=1', {headers:{apikey:key, Authorization:'Bearer '+key}});
+      if(!r.ok) throw new Error('HTTP '+r.status+' '+await r.text().then(t=>t.slice(0,120)));
+      document.getElementById('sbStatus').textContent='✅ 連線成功（fetch 模式）！資料表可讀寫';
+      toast('連線成功');
+      return;
+    }catch(e){
+      document.getElementById('sbStatus').textContent='⚠️ 連線失敗：' + (e.message||e) + ' — 請檢查 SQL 是否已建表 homework_data';
+      return;
+    }
+  }
   try{
     const {error} = await sbClient.from('homework_data').select('id').limit(1);
     if(error) throw error;
