@@ -20,8 +20,24 @@
   .btn.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
   .btn.primary:hover{opacity:.9}
   .btn.small{padding:5px 10px;font-size:12px}
-  .layout{max-width:1280px;margin:16px auto;padding:0 12px;display:grid;grid-template-columns:260px 1fr;gap:16px}
+  .layout{max-width:1280px;margin:16px auto;padding:0 12px;display:grid;grid-template-columns:280px 1fr;gap:16px}
   @media(max-width:900px){.layout{grid-template-columns:1fr}}
+  @media(max-width:600px){
+    header{padding:10px 12px}
+    header h1{font-size:16px}
+    .header-right{width:100%;justify-content:flex-start}
+    .layout{margin:8px auto;gap:12px;padding:0 8px}
+    .card{padding:10px}
+    .toolbar{flex-direction:column;align-items:stretch}
+    .toolbar input,.toolbar select{width:100%;min-width:0}
+    .table-wrap{max-height:none;-webkit-overflow-scrolling:touch}
+    table{min-width:600px}
+    th,td{padding:6px 6px;font-size:12px}
+    .stats{grid-template-columns:1fr 1fr 1fr;gap:6px}
+    .stat{padding:8px 4px}
+    .stat b{font-size:16px}
+    .week-filter{width:100%}
+  }
   .card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:14px}
   .card h3{margin:0 0 10px 0;font-size:14px;display:flex;justify-content:space-between;align-items:center}
   .assignment-item{border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;transition:.15s}
@@ -32,6 +48,11 @@
   .assignment-item .progress{height:6px;background:#e8eaed;border-radius:4px;overflow:hidden;margin-top:6px}
   .assignment-item .progress div{height:100%;background:var(--green-b);transition:width .3s}
   .assignment-item .desc{font-size:11px;color:#5f6368;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .week-badge{display:inline-block;font-size:10px;background:#e8f0fe;color:var(--primary);border:1px solid #d2e3fc;padding:1px 6px;border-radius:20px;margin-right:4px}
+  .week-filter{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  .week-filter .chip{padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer}
+  .week-filter .chip.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .week-group-title{font-size:12px;font-weight:700;color:var(--primary);margin:10px 0 6px 0;padding:4px 8px;background:#e8f0fe;border-radius:6px}
   .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
   .toolbar input,.toolbar select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px}
   .toolbar input{flex:1;min-width:160px}
@@ -104,6 +125,7 @@
 <div class="layout">
   <aside class="card">
     <h3>📋 作業清單 <button class="btn small primary" onclick="openAssignmentModal()">＋ 新增</button></h3>
+    <div class="week-filter" id="weekChips"></div>
     <div id="assignmentList"></div>
     <div style="margin-top:10px;padding:10px;background:#f8f9fa;border-radius:10px">
       <div style="font-size:12px;font-weight:600;margin-bottom:6px">💡 使用小技巧</div>
@@ -114,6 +136,9 @@
   <main>
     <div class="card">
       <div class="toolbar">
+        <select id="weekView" class="week-filter" onchange="setWeekFilter(this.value)" style="min-width:120px">
+          <option value="all">📅 全部週次</option>
+        </select>
         <input id="search" placeholder="🔍 搜尋學生姓名或座號..." oninput="renderTable()">
         <select id="filter" onchange="renderTable()">
           <option value="all">全部狀態</option>
@@ -124,7 +149,7 @@
         <button class="btn small primary" onclick="markAllDone()">✅ 一鍵全班已交</button>
         <button class="btn small" onclick="copyMissing()">📋 一鍵複製未交名單</button>
       </div>
-      <div class="small" style="margin-bottom:8px;color:var(--muted)">💡 先按「一鍵全班已交」把全部標為已交，再點個別格子改為 未交/遲交（順序：已交 → 未交 → 遲交）；遲交可點 ✏️ 填寫遲交時間</div>
+      <div class="small" style="margin-bottom:8px;color:var(--muted)">💡 週次篩選後只顯示該週作業；先按「一鍵全班已交」再改未交/遲交（已交 → 未交 → 遲交）</div>
 
       <div id="statsBar" class="stats"></div>
 
@@ -145,9 +170,10 @@
     <h3 id="amTitle">新增作業</h3>
     <div class="field"><label>作業名稱 *</label><input id="aName" placeholder="例如：國文作文、數學作業一"></div>
     <div class="grid2">
+      <div class="field"><label>週次 *</label><input id="aWeek" type="number" min="1" max="30" placeholder="例如：1"></div>
       <div class="field"><label>截止日期</label><input id="aDate" type="date"></div>
-      <div class="field"><label>說明（選填）</label><input id="aDesc" placeholder="例如：需交紙本 / 連結"></div>
     </div>
+    <div class="field"><label>說明（選填）</label><input id="aDesc" placeholder="例如：需交紙本 / 連結"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button class="btn" onclick="closeAssignmentModal()">取消</button>
       <button class="btn primary" onclick="saveAssignment()">儲存</button>
@@ -223,6 +249,7 @@ let assignments = [];
 let records = {}; // key: studentId-assignmentId -> {status, note}
 let activeAssignmentId = null;
 let editingAssignmentId = null;
+let currentWeekFilter = localStorage.getItem('homework_week_filter') || 'all';
 let cloudCode = localStorage.getItem('homework_cloud_code') || '';
 
 function defaultStudents(){
@@ -230,7 +257,7 @@ function defaultStudents(){
 }
 function defaultData(){
   students = defaultStudents();
-  assignments = [{id:1, name:'作業一', dueDate:'', desc:'範例作業，可編輯或刪除'}];
+  assignments = [{id:1, name:'作業一', week:1, dueDate:'', desc:'範例作業，可編輯或刪除'}];
   records = {};
   activeAssignmentId = 1;
 }
@@ -251,7 +278,7 @@ function load(){
       try{
         const json = decodeURIComponent(escape(atob(hash.slice(6))));
         const data = JSON.parse(json);
-        if(data.students && data.assignments){ students=data.students; assignments=data.assignments; records=migrateRecords(data.records||{}); activeAssignmentId=assignments[0]?.id||null; toast('已從分享連結載入資料'); save(); history.replaceState(null,'',location.pathname); return; }
+        if(data.students && data.assignments){ students=data.students; assignments=(data.assignments||[]).map(a=> ({...a, week: a.week? parseInt(a.week):1})); records=migrateRecords(data.records||{}); activeAssignmentId=assignments[0]?.id||null; toast('已從分享連結載入資料'); save(); history.replaceState(null,'',location.pathname); return; }
       }catch(e){ console.warn(e)}
     }
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -262,15 +289,19 @@ function load(){
     if(students.length!==24){
       if(students.length<24){ for(let i=students.length+1;i<=24;i++) students.push({id:i,name:`學生${i}`}) } else students=students.slice(0,24);
     }
-    assignments = data.assignments || [];
+    assignments = (data.assignments || []).map(a=> ({...a, week: a.week? parseInt(a.week):1}));
+    // 自動補週次：若舊資料沒有週次，依截止日期或建立順序推斷
+    assignments.forEach((a,i)=>{ if(!a.week || isNaN(a.week)) a.week = i+1; });
     records = migrateRecords(data.records || {});
     activeAssignmentId = data.activeAssignmentId || (assignments[0]?.id||null);
-    if(!assignments.length){ assignments=[{id:1,name:'作業一',dueDate:'',desc:'範例'}]; activeAssignmentId=1; }
+    if(!assignments.length){ assignments=[{id:1,name:'作業一',week:1,dueDate:'',desc:'範例'}]; activeAssignmentId=1; }
+    currentWeekFilter = localStorage.getItem('homework_week_filter') || 'all';
   }catch(e){ defaultData(); }
 }
 function save(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify({students, assignments, records, activeAssignmentId}));
   if(cloudCode) localStorage.setItem(SYNC_PREFIX+cloudCode, JSON.stringify({students, assignments, records}));
+  localStorage.setItem('homework_week_filter', currentWeekFilter);
   document.getElementById('lastSync').textContent = '上次儲存：剛剛';
   document.getElementById('syncPill').className='pill ok';
   document.getElementById('syncPill').textContent='● 已自動保存';
@@ -278,39 +309,99 @@ function save(){
   if(cloudCode){ document.getElementById('syncStatus') && (document.getElementById('syncStatus').textContent='已同步到同步碼：'+cloudCode+'（換電腦輸入同碼即可載入）'); }
 }
 function uid(){ return Date.now() + Math.floor(Math.random()*1000) }
+function getWeeks(){
+  const weeks=[...new Set(assignments.map(a=>a.week))].sort((a,b)=>a-b);
+  return weeks;
+}
+function getFilteredAssignments(){
+  if(currentWeekFilter==='all') return assignments;
+  return assignments.filter(a=> String(a.week)===String(currentWeekFilter));
+}
+function setWeekFilter(val){
+  currentWeekFilter=val; save(); renderAll();
+}
+function renderWeekChips(){
+  const chips=document.getElementById('weekChips');
+  const sel=document.getElementById('weekView');
+  const weeks=getWeeks();
+  // 更新下拉
+  sel.innerHTML='<option value="all">📅 全部週次</option>';
+  weeks.forEach(w=>{
+    const cnt=assignments.filter(a=>a.week===w).length;
+    const opt=document.createElement('option'); opt.value=w; opt.textContent=`第 ${w} 週 (${cnt}份)`;
+    if(String(w)===String(currentWeekFilter)) opt.selected=true;
+    sel.appendChild(opt);
+  });
+  if(currentWeekFilter!=='all' && !weeks.includes(parseInt(currentWeekFilter))){
+    currentWeekFilter='all'; save();
+  }
+  // 側邊小膠囊
+  chips.innerHTML='';
+  const allChip=document.createElement('span'); allChip.className='chip'+(currentWeekFilter==='all'?' active':''); allChip.textContent='全部'; allChip.onclick=()=>setWeekFilter('all'); chips.appendChild(allChip);
+  weeks.forEach(w=>{
+    const c=document.createElement('span'); c.className='chip'+(String(w)===String(currentWeekFilter)?' active':''); c.textContent=`第${w}週`; c.onclick=()=>setWeekFilter(w); chips.appendChild(c);
+  });
+  // 若沒有週次，顯示提示
+  if(!weeks.length) chips.innerHTML='<span class="small">還沒有作業</span>';
+}
 
 function renderAssignments(){
   const list = document.getElementById('assignmentList');
   list.innerHTML='';
-  assignments.forEach(a=>{
-    const done = students.filter(s=> getStatus(s.id,a.id)==='done').length;
-    const pct = students.length? Math.round(done/students.length*100):0;
-    const overdue = a.dueDate && new Date(a.dueDate) < new Date().setHours(0,0,0,0);
-    const div = document.createElement('div');
-    div.className='assignment-item'+(a.id===activeAssignmentId?' active':'');
-    div.onclick=()=>{ activeAssignmentId=a.id; renderAll(); openDetail(a.id); };
-    div.innerHTML=`<div class="name">${escapeHtml(a.name)} ${overdue?'<span style="font-size:10px;color:#a50e0e;background:#fce8e6;padding:2px 6px;border-radius:10px">已截止</span>':''}</div>
-      <div class="meta">${a.dueDate? '📅 '+a.dueDate : '未設截止'} · ${done}/${students.length} 已交</div>
-      ${a.desc?`<div class="desc">${escapeHtml(a.desc)}</div>`:''}
-      <div class="progress"><div style="width:${pct}%"></div></div>
-      <div style="display:flex;gap:6px;margin-top:6px"><button class="btn small" onclick="event.stopPropagation();openAssignmentModal(${a.id})">✏️ 編輯</button><span class="small" style="align-self:center">${pct}%</span></div>`;
-    list.appendChild(div);
+  const filtered = getFilteredAssignments();
+  if(!filtered.length){
+    list.innerHTML = `<div class="empty" style="padding:16px">本週還沒有作業<br><button class="btn small primary" style="margin-top:8px" onclick="openAssignmentModal()">＋ 新增作業</button></div>`;
+    return;
+  }
+  // 若週次全部，依週次分組顯示
+  const groups={};
+  filtered.forEach(a=>{ (groups[a.week]=groups[a.week]||[]).push(a); });
+  const weeksSorted=Object.keys(groups).sort((a,b)=>a-b);
+  weeksSorted.forEach(w=>{
+    if(currentWeekFilter==='all'){
+      const title=document.createElement('div'); title.className='week-group-title'; title.textContent=`第 ${w} 週`; list.appendChild(title);
+    }
+    groups[w].forEach(a=>{
+      const done = students.filter(s=> getStatus(s.id,a.id)==='done').length;
+      const pct = students.length? Math.round(done/students.length*100):0;
+      const overdue = a.dueDate && new Date(a.dueDate) < new Date().setHours(0,0,0,0);
+      const div = document.createElement('div');
+      div.className='assignment-item'+(a.id===activeAssignmentId?' active':'');
+      div.onclick=()=>{ activeAssignmentId=a.id; renderAll(); openDetail(a.id); };
+      div.innerHTML=`<div class="name"><span class="week-badge">第${a.week}週</span> ${escapeHtml(a.name)} ${overdue?'<span style="font-size:10px;color:#a50e0e;background:#fce8e6;padding:2px 6px;border-radius:10px">已截止</span>':''}</div>
+        <div class="meta">${a.dueDate? '📅 '+a.dueDate : '未設截止'} · ${done}/${students.length} 已交</div>
+        ${a.desc?`<div class="desc">${escapeHtml(a.desc)}</div>`:''}
+        <div class="progress"><div style="width:${pct}%"></div></div>
+        <div style="display:flex;gap:6px;margin-top:6px"><button class="btn small" onclick="event.stopPropagation();openAssignmentModal(${a.id})">✏️ 編輯</button><span class="small" style="align-self:center">${pct}%</span></div>`;
+      list.appendChild(div);
+    });
   });
 }
 function renderStats(){
   const bar = document.getElementById('statsBar');
   if(!assignments.length){ bar.innerHTML=''; return;}
-  // 顯示目前選中作業的統計，若無選中則顯示全部平均
-  const a = assignments.find(x=>x.id===activeAssignmentId) || assignments[0];
-  const done = students.filter(s=> getStatus(s.id,a.id)==='done').length;
-  const late = students.filter(s=> getStatus(s.id,a.id)==='late').length;
-  const missing = students.length - done - late;
-  const rate = Math.round(done/students.length*100);
+  const filtered = getFilteredAssignments();
+  if(!filtered.length){ bar.innerHTML=`<div class="stat"><b>0</b><span>本週作業</span></div><div class="stat"><b>—</b><span>已交</span></div><div class="stat"><b>—</b><span>未交 · 遲交</span></div>`; return;}
+  // 計算 filtered 全部的統計（修正：明確計算 missing，避免推導誤差）
+  let totalDone=0, totalLate=0, totalMissing=0;
+  filtered.forEach(a=>{
+    students.forEach(s=>{
+      const st=getStatus(s.id,a.id);
+      if(st==='done') totalDone++;
+      else if(st==='late') totalLate++;
+      else totalMissing++;
+    });
+  });
+  const totalSlots = students.length * filtered.length;
+  const rate = totalSlots? Math.round(totalDone/totalSlots*100):0;
+  // 若只看某週，且該週只有 1 份作業，顯示更精細的單份統計
+  const weekLabel = currentWeekFilter==='all' ? '全部' : `第 ${currentWeekFilter} 週`;
   bar.innerHTML=`
-    <div class="stat"><b>${assignments.length}</b><span>份作業</span></div>
-    <div class="stat"><b style="color:var(--green-b)">${done}</b><span>已交（${rate}%）</span></div>
-    <div class="stat"><b style="color:var(--red-b)">${missing}</b><span>未交</span> · <b style="color:var(--yellow-b)">${late}</b><span>遲交</span></div>
+    <div class="stat"><b>${filtered.length}</b><span>${weekLabel} · ${filtered.length}份作業</span></div>
+    <div class="stat"><b style="color:var(--green-b)">${totalDone}</b><span>已交人次（${rate}%）</span></div>
+    <div class="stat"><b style="color:var(--red-b)">${totalMissing}</b><span>未交</span> · <b style="color:var(--yellow-b)">${totalLate}</b><span>遲交</span></div>
   `;
+  // 同時更新側邊每個作業的 progress 已在 renderAssignments 中正確計算
 }
 function getRecord(sid, aid){
   return records[`${sid}-${aid}`] || {status:'missing', note:''};
@@ -356,25 +447,32 @@ function renderTable(){
   const wrap = document.getElementById('tableWrap');
   const q = document.getElementById('search').value.trim();
   const filter = document.getElementById('filter').value;
+  const visibleAssignments = getFilteredAssignments();
   let filteredStudents = students.filter(s=> !q || s.name.includes(q) || String(s.id).includes(q));
   if(filter!=='all'){
     filteredStudents = filteredStudents.filter(s=>{
-      // 若有多作業，篩選是指「任一作業」或「當前作業」？統一用當前選中作業
-      const a = assignments.find(x=>x.id===activeAssignmentId) || assignments[0];
-      if(!a) return true;
-      return getStatus(s.id,a.id)===filter;
+      // 週次篩選時，篩選邏輯看「該週任一作業」符合狀態就顯示，否則看當前選中作業
+      const pool = visibleAssignments.length? visibleAssignments : assignments;
+      if(filter==='missing' || filter==='late'){
+        // 顯示在該週有任一未交/遲交的學生
+        return pool.some(a=> getStatus(s.id,a.id)===filter);
+      } else {
+        // 已交：該週全部已交才算
+        return pool.every(a=> getStatus(s.id,a.id)==='done');
+      }
     });
   }
   if(!assignments.length){ wrap.innerHTML='<div class="empty">還沒有作業，按左側「新增」來建立第一份作業</div>'; return;}
+  if(!visibleAssignments.length){ wrap.innerHTML=`<div class="empty">第 ${currentWeekFilter} 週還沒有作業<br>切回「全部週次」或新增作業到本週</div>`; return;}
   if(!filteredStudents.length){ wrap.innerHTML='<div class="empty">找不到符合的學生，試試別的關鍵字或篩選</div>'; return;}
   let html='<table><thead><tr><th>學生 \\ 作業</th>';
-  assignments.forEach(a=>{
-    html+=`<th title="${escapeHtml(a.desc||'')}">${escapeHtml(a.name)}<br><span style="font-weight:400;font-size:11px;color:var(--muted)">${a.dueDate||'未設截止'}</span></th>`;
+  visibleAssignments.forEach(a=>{
+    html+=`<th title="${escapeHtml(a.desc||'')}"><span class="week-badge">第${a.week}週</span> ${escapeHtml(a.name)}<br><span style="font-weight:400;font-size:11px;color:var(--muted)">${a.dueDate||'未設截止'}</span></th>`;
   });
   html+='</tr></thead><tbody>';
   filteredStudents.forEach(s=>{
     html+=`<tr><td>${s.id}. ${escapeHtml(s.name)}</td>`;
-    assignments.forEach(a=>{
+    visibleAssignments.forEach(a=>{
       const st=getStatus(s.id,a.id);
       const note=getNote(s.id,a.id);
       const label = st==='done'?'已交': st==='late'?'遲交':'未交';
@@ -388,7 +486,7 @@ function renderTable(){
   html+='</tbody></table>';
   wrap.innerHTML=html;
 }
-function renderAll(){ renderAssignments(); renderStats(); renderTable(); if(document.getElementById('detailModal').classList.contains('show') && activeAssignmentId) renderDetail(activeAssignmentId); }
+function renderAll(){ renderWeekChips(); renderAssignments(); renderStats(); renderTable(); if(document.getElementById('detailModal').classList.contains('show') && activeAssignmentId) renderDetail(activeAssignmentId); }
 
 function openAssignmentModal(id=null){
   editingAssignmentId=id;
@@ -396,6 +494,9 @@ function openAssignmentModal(id=null){
   const a = assignments.find(x=>x.id===id);
   document.getElementById('amTitle').textContent = a? '編輯作業' : '新增作業';
   document.getElementById('aName').value = a? a.name : '';
+  const weekInput=document.getElementById('aWeek');
+  if(a) weekInput.value = a.week;
+  else weekInput.value = currentWeekFilter==='all' ? (getWeeks().length? Math.max(...getWeeks()) : 1) : currentWeekFilter;
   document.getElementById('aDate').value = a? a.dueDate : '';
   document.getElementById('aDesc').value = a? a.desc : '';
   document.getElementById('deleteAssignmentBtn').style.display = a? 'inline-flex':'none';
@@ -404,18 +505,21 @@ function openAssignmentModal(id=null){
 function closeAssignmentModal(){ document.getElementById('assignmentModal').classList.remove('show'); editingAssignmentId=null; }
 function saveAssignment(){
   const name=document.getElementById('aName').value.trim();
+  const week=parseInt(document.getElementById('aWeek').value);
   const due=document.getElementById('aDate').value;
   const desc=document.getElementById('aDesc').value.trim();
   if(!name){ toast('請填作業名稱'); return;}
+  if(!week || week<1){ toast('請填正確週次（1-30）'); return;}
   if(editingAssignmentId){
     const a=assignments.find(x=>x.id===editingAssignmentId);
-    a.name=name; a.dueDate=due; a.desc=desc;
+    a.name=name; a.week=week; a.dueDate=due; a.desc=desc;
   }else{
     const id=uid();
-    assignments.push({id, name, dueDate:due, desc});
+    assignments.push({id, name, week, dueDate:due, desc});
     activeAssignmentId=id;
+    currentWeekFilter=String(week);
   }
-  save(); renderAll(); closeAssignmentModal(); toast('已儲存作業');
+  save(); renderAll(); closeAssignmentModal(); toast(`已儲存到第 ${week} 週`);
 }
 function deleteAssignment(){
   if(!editingAssignmentId) return;
@@ -538,8 +642,8 @@ function exportCSV(){
     csv+=row.join(',')+'\n';
   });
   // 加上作業資訊在底部
-  csv += '\n作業,截止日期,說明\n';
-  assignments.forEach(a=>{ csv+=`"${a.name.replace(/"/g,'""')}",${a.dueDate},"${(a.desc||'').replace(/"/g,'""')}"\n`; });
+  csv += '\n週次,作業,截止日期,說明\n';
+  assignments.forEach(a=>{ csv+=`${a.week},"${a.name.replace(/"/g,'""')}",${a.dueDate},"${(a.desc||'').replace(/"/g,'""')}"\n`; });
   download(csv, `作業繳交_${new Date().toISOString().slice(0,10)}.csv`, 'text/csv');
   // 同時也存 JSON 備份
   const json = JSON.stringify({students, assignments, records, exportedAt:new Date().toISOString()}, null, 2);
@@ -562,7 +666,7 @@ function importFile(e){
         if(data.students && data.assignments){
           if(!confirm('匯入會覆蓋目前全部資料，確定嗎？建議先匯出備份。')) return;
           students=data.students.slice(0,24); while(students.length<24) students.push({id:students.length+1,name:`學生${students.length+1}`});
-          assignments=data.assignments; records=migrateRecords(data.records||{}); activeAssignmentId=assignments[0]?.id||null;
+          assignments=(data.assignments||[]).map(a=> ({...a, week: a.week? parseInt(a.week):1})); records=migrateRecords(data.records||{}); activeAssignmentId=assignments[0]?.id||null;
           save(); renderAll(); toast('已匯入 JSON 備份');
         } else toast('JSON 格式不正確');
       } else if(file.name.endsWith('.csv')){
@@ -591,7 +695,7 @@ function loadSyncCode(){
   if(!raw){ toast('找不到這個同步碼的資料（可能在別台電腦）— 請改用分享連結'); return;}
   if(!confirm('載入會覆蓋目前資料，確定嗎？')) return;
   const data=JSON.parse(raw);
-  students=data.students; assignments=data.assignments; records=migrateRecords(data.records||{}); activeAssignmentId=assignments[0]?.id||null;
+  students=data.students; assignments=(data.assignments||[]).map(a=> ({...a, week: a.week? parseInt(a.week):1})); records=migrateRecords(data.records||{}); activeAssignmentId=assignments[0]?.id||null;
   cloudCode=code; localStorage.setItem('homework_cloud_code', cloudCode);
   save(); renderAll(); toast('已載入同步碼資料');
 }
