@@ -136,7 +136,7 @@
     <span id="syncPill" class="pill ok">● 已自動保存</span>
     <span id="lastSync" class="small">上次儲存：剛剛</span>
     <button id="authBtn" class="btn small" onclick="openAuthModal()">🔑 通關密碼</button>
-    <button class="btn small" onclick="openStudentModal()">👥 名單設定</button>
+    <button id="btnStudent" class="btn small" onclick="openStudentModal()">👥 名單設定</button>
     <button class="btn small" onclick="exportCSV()">⬇️ 匯出 Excel/CSV</button>
     <button class="btn small" onclick="document.getElementById('importFile').click()">⬆️ 匯入備份</button>
     <input type="file" id="importFile" accept=".json,.csv" style="display:none" onchange="importFile(event)">
@@ -311,25 +311,27 @@ alter table homework_data disable row level security;
 <div id="authModal" class="modal" onclick="if(event.target===this)closeAuthModal()">
   <div class="modal-box" style="max-width:420px">
     <h3>🔑 通關密碼</h3>
-    <p class="small">設定一組通關密碼後，之後需輸入正確密碼才能編輯與同步。適合老師間共用，不用記 Email。</p>
+    <p class="small">主密碼（老師）有全部權限；小老師密碼只能登記作業（可新增、打勾、備註），不能改名單、刪作業、改密碼或雲端設定。</p>
     <div id="authLoggedIn" style="display:none;border:1px solid var(--green-b);background:var(--green);border-radius:8px;padding:10px;margin-bottom:10px">
-      <div style="font-size:13px">✅ 已解鎖</div>
-      <div class="small">現在可編輯表格與同步到雲端</div>
+      <div style="font-size:13px">✅ 已解鎖：<span id="roleBadge"></span></div>
+      <div class="small" id="roleDesc"></div>
       <button class="btn small" style="margin-top:8px" onclick="lockApp()">🔒 上鎖</button>
-      <button class="btn small" style="margin-top:8px" onclick="clearPasscode()">🗑️ 清除密碼</button>
+      <button class="btn small" id="clearPassBtn" style="margin-top:8px" onclick="clearPasscode()">🗑️ 清除全部密碼</button>
     </div>
     <div id="authForm">
       <div id="passcodeSetArea">
-        <div class="field"><label>設定通關密碼（4-20 字）</label><input id="passcodeSet" type="password" placeholder="例如：class301"></div>
+        <div class="field"><label>主密碼（老師，4-20 字）* </label><input id="passcodeSet" type="password" placeholder="例如：teacher2024"></div>
+        <div class="field"><label>小老師密碼（選填，4-20 字）</label><input id="assistantSet" type="password" placeholder="例如：helper301（留空則不開放小老師）"></div>
         <button class="btn small primary" onclick="setPasscode()">💾 設定密碼</button>
+        <div class="small" style="margin-top:6px">已設過？小老師密碼可單獨更新，留空主密碼只改小老師。</div>
       </div>
       <div id="passcodeUnlockArea" style="margin-top:10px">
-        <div class="field"><label>輸入通關密碼解鎖</label><input id="passcodeInput" type="password" placeholder="輸入密碼"></div>
+        <div class="field"><label>輸入通關密碼解鎖</label><input id="passcodeInput" type="password" placeholder="輸入主密碼或小老師密碼"></div>
         <button class="btn small primary" onclick="unlockWithPasscode()">🔓 解鎖</button>
       </div>
       <div id="authMsg" class="small" style="margin-top:8px"></div>
       <div class="small" style="margin-top:8px;background:#fff3cd;border:1px solid #ffe69c;padding:6px;border-radius:6px">
-        密碼會同步到雲端，新裝置需輸入同一組才能解鎖。忘記密碼按「清除密碼」重設（需本機操作）。
+        密碼會同步到雲端，新裝置輸入任一組即可解鎖（權限不同）。忘記主密碼需在已解鎖的老師裝置上清除重設。
       </div>
     </div>
     <div style="text-align:right;margin-top:12px"><button class="btn" onclick="closeAuthModal()">關閉</button></div>
@@ -425,14 +427,17 @@ function save(){
   if(sbClient) saveToCloud();
 }
 let isUnlocked=false;
+let userRole=null; // 'admin' | 'assistant' | null
 let passcodeHash=localStorage.getItem('homework_passcode_hash')||'';
-function hashPasscode(s){ // 簡單可逆但夠擋一般人，若要更安全可換成 SHA-256
+let assistantHash=localStorage.getItem('homework_assistant_hash')||'';
+function hashPasscode(s){
   try{ return btoa(unescape(encodeURIComponent(s))); }catch(e){ return s; }
 }
 function initSupabase(){
   supabaseUrl = (localStorage.getItem('supabase_url') || '').trim();
   supabaseKey = (localStorage.getItem('supabase_key') || '').trim();
   passcodeHash = localStorage.getItem('homework_passcode_hash')||'';
+  assistantHash = localStorage.getItem('homework_assistant_hash')||'';
   const urlInput=document.getElementById('sbUrl'); if(urlInput) urlInput.value=supabaseUrl;
   const keyInput=document.getElementById('sbKey'); if(keyInput) keyInput.value=supabaseKey;
   if(!supabaseUrl || !supabaseKey){
@@ -458,20 +463,29 @@ function updateAuthUI(){
   const btn=document.getElementById('authBtn');
   const loggedIn=document.getElementById('authLoggedIn');
   const form=document.getElementById('authForm');
-  const hasPasscode = !!passcodeHash;
-  if(!hasPasscode){
+  const roleBadge=document.getElementById('roleBadge');
+  const roleDesc=document.getElementById('roleDesc');
+  const hasAdmin = !!passcodeHash;
+  const hasAssistant = !!assistantHash;
+  const hasAny = hasAdmin || hasAssistant;
+  if(!hasAny){
     if(status){ status.textContent='● 未設密碼（開放編輯）'; status.className='pill ok'; }
     if(btn) btn.textContent='🔑 設定密碼';
     if(loggedIn) loggedIn.style.display='none';
     if(form) form.style.display='block';
     document.getElementById('passcodeSetArea').style.display='block';
     document.getElementById('passcodeUnlockArea').style.display='none';
-    isUnlocked=true;
+    isUnlocked=true; userRole=null;
   } else if(isUnlocked){
-    if(status){ status.textContent='● 已解鎖'; status.className='pill ok'; }
-    if(btn) btn.textContent='🔓 已解鎖';
+    const isAdmin = userRole==='admin';
+    if(status){ status.textContent= isAdmin ? '● 已解鎖（老師）' : '● 已解鎖（小老師）'; status.className='pill ok'; }
+    if(btn) btn.textContent= isAdmin ? '👩‍🏫 老師' : '👧 小老師';
     if(loggedIn) loggedIn.style.display='block';
+    if(roleBadge) roleBadge.textContent= isAdmin ? '老師（全部權限）' : '小老師（僅登記作業）';
+    if(roleDesc) roleDesc.textContent= isAdmin ? '可改名單、刪作業、改密碼、雲端設定' : '可新增作業、打勾、備註；不可改名單、刪作業、改密碼';
     if(form) form.style.display='none';
+    // 小老師隱藏刪除按鈕
+    const delBtn=document.getElementById('deleteAssignmentBtn'); if(delBtn) delBtn.style.display = (isAdmin && delBtn.dataset.show!=='false') ? 'inline-flex' : 'none';
   } else {
     if(status){ status.textContent='● 已上鎖'; status.className='pill off'; }
     if(btn) btn.textContent='🔒 已上鎖';
@@ -480,55 +494,96 @@ function updateAuthUI(){
     document.getElementById('passcodeSetArea').style.display='none';
     document.getElementById('passcodeUnlockArea').style.display='block';
   }
-  // 唯讀控制
-  document.body.classList.toggle('locked', hasPasscode && !isUnlocked);
+  const locked = hasAny && !isUnlocked;
+  document.body.classList.toggle('locked', locked);
+  // 小老師限制：隱藏名單、雲端設定輸入
+  const btnStudent=document.getElementById('btnStudent');
+  if(btnStudent) { btnStudent.style.display = (hasAny && userRole==='assistant') ? 'none' : 'inline-flex'; }
+  const cloudInputs=document.querySelector('.cloud-config');
+  if(cloudInputs) cloudInputs.style.opacity = (hasAny && userRole==='assistant') ? '0.4' : '1';
+  if(cloudInputs) cloudInputs.style.pointerEvents = (hasAny && userRole==='assistant') ? 'none' : 'auto';
 }
 function openAuthModal(){ document.getElementById('authModal').classList.add('show'); updateAuthUI(); }
 function closeAuthModal(){ document.getElementById('authModal').classList.remove('show'); }
 function setPasscode(){
-  const input=document.getElementById('passcodeSet').value.trim();
+  const adminInput=document.getElementById('passcodeSet').value.trim();
+  const asstInput=document.getElementById('assistantSet').value.trim();
   const msg=document.getElementById('authMsg');
-  if(!input || input.length<4){ msg.textContent='請輸入至少 4 字的密碼'; return; }
-  const h=hashPasscode(input);
-  localStorage.setItem('homework_passcode_hash', h);
-  passcodeHash=h; isUnlocked=true;
-  // 同步到雲端（若有 Supabase）
-  if(sbClient){
-    // 把密碼雜湊也存到雲端資料的 data 裡，方便新裝置取得
-    saveToCloud();
+  const hasAny = !!passcodeHash || !!assistantHash;
+  // 若已上鎖且不是老師，不可設定
+  if(hasAny && userRole!=='admin' && !(!passcodeHash && !assistantHash)){
+    // 若已設密碼但未解鎖為老師，阻擋
+    if(!isUnlocked || userRole!=='admin'){ msg.textContent='⚠️ 只有老師（主密碼）可設定密碼'; return; }
   }
-  updateAuthUI(); msg.textContent='✅ 已設定通關密碼';
-  toast('已設定通關密碼');
+  if(!adminInput && !asstInput){ msg.textContent='請至少設定一組密碼'; return; }
+  if(adminInput){
+    if(adminInput.length<4){ msg.textContent='主密碼至少 4 字'; return; }
+    const h=hashPasscode(adminInput);
+    localStorage.setItem('homework_passcode_hash', h);
+    passcodeHash=h;
+  }
+  if(asstInput){
+    if(asstInput.length<4){ msg.textContent='小老師密碼至少 4 字'; return; }
+    const h2=hashPasscode(asstInput);
+    localStorage.setItem('homework_assistant_hash', h2);
+    assistantHash=h2;
+  } else if(adminInput && !asstInput && hasAny && document.getElementById('assistantSet').value===''){
+    // 若只改主密碼，不動小老師
+  }
+  // 若原本沒密碼，設定後自動解鎖為老師
+  if(adminInput) { isUnlocked=true; userRole='admin'; }
+  else if(assistantHash && !passcodeHash) { isUnlocked=true; userRole='assistant'; }
+  updateAuthUI();
+  if(sbClient) saveToCloud();
+  msg.textContent='✅ 已設定密碼' + (asstInput ? '（含小老師）' : '（僅主密碼）');
+  toast('已設定密碼'); closeAuthModal();
+  document.getElementById('passcodeSet').value=''; const ae=document.getElementById('assistantSet'); if(ae) ae.value='';
 }
 function unlockWithPasscode(){
   const input=document.getElementById('passcodeInput').value.trim();
   const msg=document.getElementById('authMsg');
   if(!input){ msg.textContent='請輸入密碼'; return; }
-  if(hashPasscode(input)===passcodeHash){
-    isUnlocked=true; updateAuthUI(); msg.textContent='✅ 已解鎖';
-    toast('已解鎖，可開始編輯'); closeAuthModal(); renderAll();
+  const h=hashPasscode(input);
+  if(passcodeHash && h===passcodeHash){
+    isUnlocked=true; userRole='admin'; updateAuthUI(); msg.textContent='✅ 已解鎖（老師）';
+    toast('已解鎖（老師）'); closeAuthModal(); renderAll();
+    if(sbClient) syncFromCloud();
+  } else if(assistantHash && h===assistantHash){
+    isUnlocked=true; userRole='assistant'; updateAuthUI(); msg.textContent='✅ 已解鎖（小老師）';
+    toast('已解鎖（小老師）'); closeAuthModal(); renderAll();
     if(sbClient) syncFromCloud();
   } else {
     msg.textContent='⚠️ 密碼錯誤';
   }
 }
-function lockApp(){ isUnlocked=false; updateAuthUI(); toast('已上鎖'); }
+function lockApp(){ isUnlocked=false; userRole=null; updateAuthUI(); toast('已上鎖'); }
 function clearPasscode(){
-  if(!confirm('確定要清除通關密碼？之後所有人都能直接編輯')) return;
+  if(userRole!=='admin' && (passcodeHash || assistantHash)){
+    const m=document.getElementById('authMsg'); if(m) m.textContent='⚠️ 只有老師可清除密碼，請先用主密碼解鎖';
+    return;
+  }
+  if(!confirm('確定要清除全部密碼？之後所有人都能直接編輯')) return;
   localStorage.removeItem('homework_passcode_hash');
-  passcodeHash=''; isUnlocked=true; updateAuthUI();
-  document.getElementById('authMsg').textContent='已清除密碼';
+  localStorage.removeItem('homework_assistant_hash');
+  passcodeHash=''; assistantHash=''; isUnlocked=true; userRole=null; updateAuthUI();
+  document.getElementById('authMsg').textContent='已清除全部密碼';
   toast('已清除密碼');
+  if(sbClient) saveToCloud();
 }
 async function checkPasscodeFromCloud(cloudData){
   const cloudHash = cloudData?.passcodeHash || cloudData?.data?.passcodeHash || null;
+  const cloudAsst = cloudData?.assistantHash || cloudData?.data?.assistantHash || null;
   if(cloudHash && !passcodeHash){
     localStorage.setItem('homework_passcode_hash', cloudHash);
     passcodeHash=cloudHash; isUnlocked=false; updateAuthUI();
   }
+  if(cloudAsst && !assistantHash){
+    localStorage.setItem('homework_assistant_hash', cloudAsst);
+    assistantHash=cloudAsst; isUnlocked=false; updateAuthUI();
+  }
 }
 function requireUnlock(){
-  if(passcodeHash && !isUnlocked){
+  if((passcodeHash || assistantHash) && !isUnlocked){
     toast('已上鎖，請先按 🔑 輸入通關密碼解鎖');
     openAuthModal();
     return false;
@@ -537,10 +592,10 @@ function requireUnlock(){
 }
 async function saveToCloud(){
   if(!sbClient) return;
-  if(passcodeHash && !isUnlocked){ const el=document.getElementById('sbStatus'); if(el) el.textContent='⚠️ 已上鎖，請先輸入通關密碼才能同步'; return; }
+  if((passcodeHash || assistantHash) && !isUnlocked){ const el=document.getElementById('sbStatus'); if(el) el.textContent='⚠️ 已上鎖，請先輸入通關密碼才能同步'; return; }
   try{
     document.getElementById('sbStatus') && (document.getElementById('sbStatus').textContent='⏳ 同步到雲端中…');
-    const payload={students, assignments, records, activeAssignmentId, passcodeHash, updatedAt: new Date().toISOString()};
+    const payload={students, assignments, records, activeAssignmentId, passcodeHash, assistantHash, updatedAt: new Date().toISOString()};
     const {error} = await sbClient.from('homework_data').upsert({id:CLOUD_ROW_ID, data: payload, updated_at: new Date().toISOString()}, {onConflict:'id'});
     if(error) throw error;
     const el=document.getElementById('sbStatus'); if(el) el.textContent='✅ 已同步到雲端（換電腦登入後自動載入） — ' + new Date().toLocaleTimeString('zh-TW');
@@ -560,11 +615,16 @@ async function syncFromCloud(){
     if(error) throw error;
     const d=data?.data;
     if(!d || !d.students) { if(el) el.textContent='雲端還沒有資料，先在這台按儲存會自動建立'; return; }
-    // 若雲端有密碼，同步到本機
+    // 若雲端有密碼，同步到本機（主密碼與小老師）
     if(d.passcodeHash && d.passcodeHash !== passcodeHash){
       localStorage.setItem('homework_passcode_hash', d.passcodeHash);
-      passcodeHash=d.passcodeHash; isUnlocked=false; updateAuthUI();
+      passcodeHash=d.passcodeHash; isUnlocked=false;
     }
+    if(d.assistantHash && d.assistantHash !== assistantHash){
+      localStorage.setItem('homework_assistant_hash', d.assistantHash);
+      assistantHash=d.assistantHash; isUnlocked=false;
+    }
+    if(d.passcodeHash || d.assistantHash) updateAuthUI();
     students=(d.students||[]).slice(0,24); while(students.length<24) students.push({id:students.length+1,name:`學生${students.length+1}`});
     assignments=(d.assignments||[]).map(a=> ({...a, week: a.week? parseInt(a.week):1}));
     records=migrateRecords(d.records||{});
@@ -578,6 +638,7 @@ async function syncFromCloud(){
   }
 }
 function saveSupabaseConfig(){
+  if((passcodeHash || assistantHash) && userRole==='assistant'){ toast('⚠️ 小老師不可改雲端設定'); return; }
   const url=document.getElementById('sbUrl').value.trim();
   const key=document.getElementById('sbKey').value.trim();
   const msgEl=document.getElementById('sbStatus');
@@ -840,6 +901,7 @@ function saveAssignment(){
 }
 function deleteAssignment(){
   if(!requireUnlock()) return;
+  if(userRole==='assistant'){ toast('⚠️ 小老師不可刪除作業'); return; }
   if(!editingAssignmentId) return;
   if(!confirm('確定要刪除這份作業？會一併刪除所有學生的繳交紀錄，建議先按匯出備份。')) return;
   assignments=assignments.filter(x=>x.id!==editingAssignmentId);
@@ -849,6 +911,7 @@ function deleteAssignment(){
 }
 
 function openStudentModal(){
+  if((passcodeHash || assistantHash) && userRole==='assistant'){ toast('⚠️ 小老師不可改名單'); return; }
   const c=document.getElementById('studentEditors');
   c.innerHTML='';
   students.forEach(s=>{
@@ -861,6 +924,7 @@ function openStudentModal(){
 function closeStudentModal(){ document.getElementById('studentModal').classList.remove('show'); }
 function saveStudents(){
   if(!requireUnlock()) return;
+  if(userRole==='assistant'){ toast('⚠️ 小老師不可修改名單，請找老師'); return; }
   document.querySelectorAll('#studentEditors input').forEach(inp=>{
     const id=parseInt(inp.dataset.id); const s=students.find(x=>x.id===id); if(s) s.name=inp.value.trim()||`學生${id}`;
   });
