@@ -961,15 +961,22 @@ function importFile(e){
 
 // 雲端同步
 function openCloudModal(){
-  document.getElementById('cloudModal').classList.add('show');
-  document.getElementById('syncCode').value=cloudCode;
-  const ss=document.getElementById('syncStatus'); if(ss) ss.textContent= cloudCode? '目前同步碼：'+cloudCode : '尚未設定同步碼';
-  // 回填 Supabase
-  const url=document.getElementById('sbUrl'); if(url) url.value=localStorage.getItem('supabase_url')||'';
-  const key=document.getElementById('sbKey'); if(key) key.value=localStorage.getItem('supabase_key')||'';
-  const sbStatus=document.getElementById('sbStatus');
-  if(supabase && sbStatus) sbStatus.textContent='✅ 已設定 Supabase，自動同步中';
-  else if(sbStatus && !supabase) sbStatus.textContent='尚未設定真雲端，完成上方 3 步驟後可自動同步';
+  try{
+    const modal=document.getElementById('cloudModal');
+    if(!modal){ toast('找不到雲端視窗'); return; }
+    modal.classList.add('show');
+    const sc=document.getElementById('syncCode'); if(sc) sc.value=cloudCode||'';
+    const ss=document.getElementById('syncStatus'); if(ss) ss.textContent= cloudCode? '目前同步碼：'+cloudCode : '尚未設定同步碼';
+    const url=document.getElementById('sbUrl'); if(url) url.value=localStorage.getItem('supabase_url')||'';
+    const key=document.getElementById('sbKey'); if(key) key.value=localStorage.getItem('supabase_key')||'';
+    const sbStatus=document.getElementById('sbStatus');
+    if(supabase && sbStatus) sbStatus.textContent='✅ 已設定 Supabase，自動同步中';
+    else if(sbStatus && !supabase) sbStatus.textContent='尚未設定真雲端，完成上方 3 步驟後可自動同步';
+    console.log('openCloudModal ok');
+  }catch(e){
+    console.error(e);
+    toast('開啟失敗：' + (e.message||e));
+  }
 }
 function closeCloudModal(){ document.getElementById('cloudModal').classList.remove('show'); }
 function saveSyncCode(){
@@ -1107,17 +1114,38 @@ function toast(msg){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200);
 }
 
+// 全域錯誤提示（幫你抓出按鈕沒反應的原因）
+window.addEventListener('error', (e)=>{
+  console.error(e.error||e.message);
+  const t=document.getElementById('toast');
+  if(t){ t.textContent='⚠️ 網頁錯誤：' + (e.message||'未知'); t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3500); }
+});
 // init
-load();
-if(cloudCode) { const el=document.getElementById('syncStatus'); if(el) el.textContent='已同步到：'+cloudCode; }
-renderAll();
-initSupabase();
-if(supabase){
-  // 自動從雲端載入（若雲端有較新資料會覆蓋本機，第一次使用會自動建立）
-  setTimeout(()=> syncFromCloud(), 800);
+try{
+  load();
+  if(cloudCode) { const el=document.getElementById('syncStatus'); if(el) el.textContent='已同步到：'+cloudCode; }
+  renderAll();
+  initSupabase();
+  if(supabase){
+    setTimeout(()=> syncFromCloud(), 800);
+  }
+  // 備用：確保按鈕一定能開（即使 inline onclick 被擋）
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const btn=document.querySelector('button[onclick="openCloudModal()"]');
+    if(btn) btn.addEventListener('click', (e)=>{ e.preventDefault(); openCloudModal(); });
+    // 若網址帶 #cloud 自動打開
+    if(location.hash==='#cloud') openCloudModal();
+  });
+  // 若 Supabase CDN 載入失敗，提示
+  setTimeout(()=>{
+    if(!window.supabase) console.warn('Supabase CDN 未載入，雲端同步需網路允許 cdn.jsdelivr.net');
+  }, 2000);
+}catch(err){
+  console.error('init failed', err);
+  toast('初始化失敗：' + (err.message||err));
 }
 // 自動每30秒同步到雲端（若有設定 Supabase）
-setInterval(()=>{ save(); }, 30000);
+setInterval(()=>{ try{ save(); }catch(e){ console.error(e); } }, 30000);
 </script>
 </body>
 </html>
