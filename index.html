@@ -130,8 +130,10 @@
 <header>
   <h1>📚 作業繳交管理 <span>24位</span></h1>
   <div class="header-right">
+    <span id="authStatus" class="pill off">● 未登入</span>
     <span id="syncPill" class="pill ok">● 已自動保存</span>
     <span id="lastSync" class="small">上次儲存：剛剛</span>
+    <button id="authBtn" class="btn small" onclick="openAuthModal()">🔐 登入</button>
     <button class="btn small" onclick="openStudentModal()">👥 名單設定</button>
     <button class="btn small" onclick="exportCSV()">⬇️ 匯出 Excel/CSV</button>
     <button class="btn small" onclick="document.getElementById('importFile').click()">⬆️ 匯入備份</button>
@@ -241,8 +243,21 @@
       <b style="font-size:13px">🌟 真雲端（Supabase）— 換電腦自動同步（推薦）</b>
       <p class="small">照下方 3 步驟建立免費雲端，完成後兩台電腦打開同網址就會自動同步，不用再手動匯入。</p>
       <div style="font-size:11px;background:#fff;border:1px dashed var(--border);border-radius:6px;padding:8px;margin:6px 0">
-        ① 到 <a href="https://supabase.com" target="_blank">supabase.com ↗</a> 建專案 → ② 左側 Table Editor 建表 <code>homework_data</code>（id=text, data=jsonb）→ ③ 在 Settings → API 複製 URL 與 anon key 貼到下方
+        ① 到 <a href="https://supabase.com" target="_blank">supabase.com ↗</a> 建專案 → ② Table Editor 建表 <code>homework_data</code>（id=text, data=jsonb）→ ③ SQL Editor 貼上 RLS 設定（見下方）→ ④ Settings → API 複製 URL 與 anon key 貼到下方 → ⑤ 按「註冊」建老師帳號並登入
       </div>
+      <details style="font-size:11px;margin:6px 0"><summary style="cursor:pointer;color:var(--primary)">點開看 RLS 設定 SQL（只需執行一次）</summary>
+        <pre style="background:#f8f9fa;padding:8px;border-radius:6px;overflow:auto;white-space:pre-wrap;font-size:10px">create table if not exists homework_data (
+  id text primary key,
+  data jsonb,
+  updated_at timestamp default now()
+);
+insert into homework_data (id, data) values ('main', '{}'::jsonb) on conflict (id) do nothing;
+alter table homework_data enable row level security;
+drop policy if exists "allow_authenticated" on homework_data;
+create policy "allow_authenticated" on homework_data
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+-- 到 Authentication → Settings 關掉 "Confirm email" 可免收驗證信（測試用）</pre>
+      </details>
       <label class="small">Supabase URL</label><input id="sbUrl" placeholder="https://xxx.supabase.co">
       <label class="small">Supabase anon key</label><input id="sbKey" placeholder="eyJhbGciOi...">
       <div style="display:flex;gap:6px;margin-top:6px">
@@ -287,6 +302,32 @@
       <button class="btn small primary" onclick="printReport()">🖨️ 列印</button>
       <button class="btn small" onclick="closeReportModal()">關閉</button>
     </div>
+  </div>
+</div>
+
+<!-- 登入 -->
+<div id="authModal" class="modal" onclick="if(event.target===this)closeAuthModal()">
+  <div class="modal-box" style="max-width:420px">
+    <h3>🔐 老師登入</h3>
+    <p class="small">登入後才能讀寫雲端資料，確保只有你能改學生紀錄。第一次請先註冊。</p>
+    <div id="authLoggedIn" style="display:none;border:1px solid var(--green-b);background:var(--green);border-radius:8px;padding:10px;margin-bottom:10px">
+      <div style="font-size:13px">已登入：<b id="authEmail"></b></div>
+      <button class="btn small" style="margin-top:8px" onclick="signOut()">🚪 登出</button>
+    </div>
+    <div id="authForm">
+      <div class="field"><label>Email</label><input id="authEmailInput" type="email" placeholder="teacher@school.edu.tw"></div>
+      <div class="field"><label>密碼（至少 6 碼）</label><input id="authPassInput" type="password" placeholder="••••••"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn small primary" onclick="signIn()">🔓 登入</button>
+        <button class="btn small" onclick="signUp()">📝 註冊</button>
+        <button class="btn small" onclick="sendReset()">忘記密碼？</button>
+      </div>
+      <div id="authMsg" class="small" style="margin-top:8px"></div>
+      <div class="small" style="margin-top:8px;background:#fff3cd;border:1px solid #ffe69c;padding:6px;border-radius:6px">
+        還沒設定 Supabase？請先到「☁️ 雲端同步」貼上 URL 與 anon key，再回來登入。
+      </div>
+    </div>
+    <div style="text-align:right;margin-top:12px"><button class="btn" onclick="closeAuthModal()">關閉</button></div>
   </div>
 </div>
 
@@ -372,30 +413,98 @@ function initSupabase(){
   if(supabaseUrl && supabaseKey && window.supabase){
     try{
       supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-      // 回填輸入框
       const urlInput=document.getElementById('sbUrl'); if(urlInput) urlInput.value=supabaseUrl;
       const keyInput=document.getElementById('sbKey'); if(keyInput) keyInput.value=supabaseKey;
+      // 監聽登入狀態
+      supabase.auth.onAuthStateChange((event, session)=>{ updateAuthUI(session?.user||null); if(event==='SIGNED_IN') syncFromCloud(); });
+      checkAuth();
       return true;
     }catch(e){ console.warn('Supabase init failed', e); supabase=null; return false; }
   }
+  updateAuthUI(null);
   return false;
+}
+function updateAuthUI(user){
+  const status=document.getElementById('authStatus');
+  const btn=document.getElementById('authBtn');
+  const loggedIn=document.getElementById('authLoggedIn');
+  const form=document.getElementById('authForm');
+  if(user){
+    if(status){ status.textContent='● 已登入 '+ (user.email||''); status.className='pill ok'; }
+    if(btn) btn.textContent='👤 已登入';
+    if(loggedIn) loggedIn.style.display='block';
+    if(form) form.style.display='none';
+    const emailEl=document.getElementById('authEmail'); if(emailEl) emailEl.textContent=user.email;
+  } else {
+    if(status){ status.textContent='● 未登入'; status.className='pill off'; }
+    if(btn) btn.textContent='🔐 登入';
+    if(loggedIn) loggedIn.style.display='none';
+    if(form) form.style.display='block';
+  }
+}
+async function checkAuth(){
+  if(!supabase) { updateAuthUI(null); return; }
+  const {data:{session}} = await supabase.auth.getSession();
+  updateAuthUI(session?.user||null);
+}
+function openAuthModal(){ document.getElementById('authModal').classList.add('show'); checkAuth(); }
+function closeAuthModal(){ document.getElementById('authModal').classList.remove('show'); }
+async function signUp(){
+  const email=document.getElementById('authEmailInput').value.trim();
+  const pass=document.getElementById('authPassInput').value.trim();
+  const msg=document.getElementById('authMsg');
+  if(!email || !pass){ msg.textContent='請填 Email 與密碼'; return; }
+  if(!supabase){ msg.textContent='請先設定 Supabase URL/key'; return; }
+  msg.textContent='註冊中…';
+  const {error} = await supabase.auth.signUp({email, password: pass});
+  if(error){ msg.textContent='⚠️ ' + error.message; } else { msg.textContent='✅ 註冊成功，請去 Email 收驗證信（若有開啟驗證），或直接登入'; toast('註冊成功'); }
+}
+async function signIn(){
+  const email=document.getElementById('authEmailInput').value.trim();
+  const pass=document.getElementById('authPassInput').value.trim();
+  const msg=document.getElementById('authMsg');
+  if(!email || !pass){ msg.textContent='請填 Email 與密碼'; return; }
+  if(!supabase){ msg.textContent='請先設定 Supabase URL/key'; return; }
+  msg.textContent='登入中…';
+  const {error} = await supabase.auth.signInWithPassword({email, password: pass});
+  if(error){ msg.textContent='⚠️ ' + error.message; } else { msg.textContent='✅ 登入成功'; toast('登入成功，自動同步中'); closeAuthModal(); }
+}
+async function signOut(){
+  if(supabase) await supabase.auth.signOut();
+  updateAuthUI(null);
+  document.getElementById('authMsg').textContent='已登出';
+  toast('已登出');
+}
+async function sendReset(){
+  const email=document.getElementById('authEmailInput').value.trim();
+  const msg=document.getElementById('authMsg');
+  if(!email){ msg.textContent='請先填 Email'; return; }
+  if(!supabase){ msg.textContent='請先設定 Supabase'; return; }
+  const {error} = await supabase.auth.resetPasswordForEmail(email);
+  if(error) msg.textContent='⚠️ ' + error.message; else msg.textContent='✅ 已寄出重設密碼信';
 }
 async function saveToCloud(){
   if(!supabase) return;
+  const {data:{session}} = await supabase.auth.getSession();
+  if(!session){ const el=document.getElementById('sbStatus'); if(el) el.textContent='⚠️ 請先登入才能同步到雲端（按右上角 🔐 登入）'; return; }
   try{
     document.getElementById('sbStatus') && (document.getElementById('sbStatus').textContent='⏳ 同步到雲端中…');
     const payload={students, assignments, records, activeAssignmentId, updatedAt: new Date().toISOString()};
     const {error} = await supabase.from('homework_data').upsert({id:CLOUD_ROW_ID, data: payload, updated_at: new Date().toISOString()}, {onConflict:'id'});
     if(error) throw error;
-    const el=document.getElementById('sbStatus'); if(el) el.textContent='✅ 已同步到雲端（換電腦自動載入） — ' + new Date().toLocaleTimeString('zh-TW');
+    const el=document.getElementById('sbStatus'); if(el) el.textContent='✅ 已同步到雲端（換電腦登入後自動載入） — ' + new Date().toLocaleTimeString('zh-TW');
     const pill=document.getElementById('syncPill'); if(pill){ pill.textContent='● 已同步到雲端'; pill.className='pill ok'; }
   }catch(e){
     console.warn(e);
-    const el=document.getElementById('sbStatus'); if(el) el.textContent='⚠️ 雲端同步失敗：' + (e.message||e);
+    const msg = e.message||e;
+    const hint = msg.includes('row-level security') ? ' 請到 Supabase 執行 RLS 設定 SQL（見下方說明）' : '';
+    const el=document.getElementById('sbStatus'); if(el) el.textContent='⚠️ 雲端同步失敗：' + msg + hint;
   }
 }
 async function syncFromCloud(){
   if(!supabase){ toast('請先設定 Supabase URL 與 anon key'); return; }
+  const {data:{session}} = await supabase.auth.getSession();
+  if(!session){ toast('請先登入'); document.getElementById('sbStatus') && (document.getElementById('sbStatus').textContent='⚠️ 請先登入'); return; }
   try{
     const el=document.getElementById('sbStatus'); if(el) el.textContent='⏳ 從雲端載入中…';
     const {data, error} = await supabase.from('homework_data').select('data').eq('id', CLOUD_ROW_ID).single();
